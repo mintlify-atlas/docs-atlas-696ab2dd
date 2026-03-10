@@ -1,0 +1,137 @@
+---
+title: Installation
+description: Install Auto Tagger from Obsidian's Community Plugins or manually from releases
+---
+
+# Installing Auto Tagger
+
+There are two ways to install Auto Tagger: from the Obsidian Community Plugins directory (recommended) or manually from GitHub releases.
+
+## From Community Plugins
+
+The easiest way to install Auto Tagger is through Obsidian's built-in Community Plugins browser.
+
+<Steps>
+  <Step title="Open Obsidian Settings">
+    Click the gear icon in the lower-left corner or use the keyboard shortcut `Cmd/Ctrl + ,`.
+  </Step>
+  
+  <Step title="Navigate to Community Plugins">
+    In the settings sidebar, select **Community Plugins**.
+    
+    If this is your first time installing a community plugin, you'll need to disable Safe Mode:
+    
+    <Note>
+      Click the **Turn off Safe Mode** button. Safe Mode prevents third-party plugins from running.
+    </Note>
+  </Step>
+  
+  <Step title="Browse Plugins">
+    Click the **Browse** button to open the Community Plugins browser.
+  </Step>
+  
+  <Step title="Search for Auto Tagger">
+    Type **"Auto Tagger"** in the search box.
+  </Step>
+  
+  <Step title="Install the Plugin">
+    Click the **Install** button on the Auto Tagger plugin page.
+    
+    After installation completes, click the **Enable** button to activate the plugin.
+  </Step>
+</Steps>
+
+<Note>
+  After enabling the plugin, Auto Tagger will automatically scan your vault. You'll see a notification when the scan completes showing how many tags were learned.
+</Note>
+
+## Manual Installation
+
+If you prefer to install from source or need to install a specific version, you can install Auto Tagger manually.
+
+<Steps>
+  <Step title="Download Release Files">
+    Go to the [Auto Tagger releases page](https://github.com/linus-wittrin/obsidian-auto-tagger/releases) on GitHub.
+    
+    Download these three files from the latest release:
+    - `main.js`
+    - `manifest.json`
+    - `styles.css`
+  </Step>
+  
+  <Step title="Create Plugin Directory">
+    Navigate to your vault's plugin directory:
+    
+    ```bash
+    cd /path/to/your/vault/.obsidian/plugins/
+    ```
+    
+    Create a folder named `auto-tagger`:
+    
+    ```bash
+    mkdir auto-tagger
+    ```
+  </Step>
+  
+  <Step title="Copy Files">
+    Copy the three downloaded files into the `auto-tagger` folder:
+    
+    ```bash
+    cp ~/Downloads/main.js .obsidian/plugins/auto-tagger/
+    cp ~/Downloads/manifest.json .obsidian/plugins/auto-tagger/
+    cp ~/Downloads/styles.css .obsidian/plugins/auto-tagger/
+    ```
+  </Step>
+  
+  <Step title="Enable in Obsidian">
+    Open Obsidian and go to **Settings** → **Community Plugins**.
+    
+    Find **Auto Tagger** in the Installed Plugins list and toggle it on.
+  </Step>
+</Steps>
+
+<Warning>
+  If you install manually, you'll need to manually download and install updates. Consider using the Community Plugins method for automatic updates.
+</Warning>
+
+## Verifying Installation
+
+To confirm Auto Tagger is installed correctly:
+
+1. Open the **Command Palette** (`Cmd/Ctrl + P`)
+2. Type "Auto Tagger"
+3. You should see commands like:
+   - **Suggest tags for current note**
+   - **Rescan vault for tag patterns**
+
+You can also check **Settings** → **Auto Tagger** to see the plugin settings page.
+
+## System Requirements
+
+<CardGroup cols={2}>
+  <Card title="Obsidian Version" icon="cube">
+    Requires Obsidian **v1.5.0** or newer
+  </Card>
+  
+  <Card title="Platform Support" icon="mobile-screen">
+    Works on **desktop and mobile** devices
+  </Card>
+</CardGroup>
+
+## Uninstallation
+
+To remove Auto Tagger:
+
+1. Go to **Settings** → **Community Plugins**
+2. Find **Auto Tagger** in the installed plugins list
+3. Click the **X** button to uninstall
+
+Alternatively, delete the `.obsidian/plugins/auto-tagger/` folder from your vault directory.
+
+<Note>
+  Uninstalling Auto Tagger will **not** remove any tags it added to your notes. Your notes remain unchanged.
+</Note>
+
+## Next Steps
+
+Now that Auto Tagger is installed, check out the [quickstart guide](/quickstart) to learn how to get your first tag suggestions.

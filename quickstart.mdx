@@ -1,80 +1,266 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quickstart Guide
+description: Get your first tag suggestions in minutes with Auto Tagger
 ---
 
-## Get started in three steps
+This guide walks you through getting your first tag suggestions with Auto Tagger. By the end, you'll understand how to trigger suggestions, accept them, and configure the plugin for your workflow.
 
-Get your documentation site running locally and make your first customization.
+## Prerequisites
 
-### Step 1: Set up your local environment
-
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
-
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
-
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
-
-## Next steps
-
-Now that you have your docs running, explore these key features:
-
-<CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
-</CardGroup>
+Before starting, make sure you have:
+- Installed Auto Tagger in your Obsidian vault (see [Installation](/installation))
+- At least a few notes with existing tags (the plugin needs 2+ documents per tag to learn patterns)
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+  Auto Tagger learns from your existing tagging patterns. If your vault has no tags yet, manually tag 5-10 notes across different topics before proceeding.
 </Note>
+
+## Initial Vault Scan
+
+When you first enable Auto Tagger, it automatically scans your vault to build its tagging model.
+
+<Steps>
+  <Step title="Wait for the scan to complete">
+    After enabling the plugin, you'll see a notice: "Auto Tagger: Scanning vault..."
+    
+    The scan completes when you see: "Auto Tagger: X tags learned from Y notes"
+  </Step>
+
+  <Step title="Check the scan results">
+    Open **Settings** → **Auto Tagger** to see your model statistics:
+    
+    - Number of unique tags learned
+    - Number of tagged documents
+    - Total documents scanned
+    - Unique words indexed
+  </Step>
+</Steps>
+
+<Warning>
+  If you see "0 tags learned", your vault doesn't have enough tagged documents. Manually add tags to at least 2-3 notes, then use the **Rescan vault** button in settings.
+</Warning>
+
+## Getting Tag Suggestions
+
+Auto Tagger offers three ways to get tag suggestions:
+
+### 1. Automatic Suggestions While Typing
+
+The plugin automatically suggests tags as you type in any note.
+
+<Steps>
+  <Step title="Open or create a note">
+    Open an existing note or create a new one with some content.
+  </Step>
+
+  <Step title="Write some content">
+    Type at least a few sentences. The plugin needs enough text to analyze.
+  </Step>
+
+  <Step title="Wait for suggestions">
+    After 2 seconds of inactivity (the default debounce delay), you'll see a suggestion notice in the bottom-right corner:
+    
+    **Suggest: #your-tag (+2 more)**
+  </Step>
+
+  <Step title="Accept or skip">
+    - Click **Add** to insert the tag
+    - Click **Skip** to ignore this suggestion
+    - Click **Skip all** to dismiss all pending suggestions
+    - Click **Show all** to see all suggestions in a modal
+  </Step>
+</Steps>
+
+### 2. Manual Command Trigger
+
+You can manually trigger suggestions at any time.
+
+<Steps>
+  <Step title="Open the command palette">
+    Press `Ctrl/Cmd + P` to open the command palette.
+  </Step>
+
+  <Step title="Run the suggest command">
+    Type "Suggest tags" and select **"Suggest tags for current note"**.
+  </Step>
+
+  <Step title="Review all suggestions">
+    A modal appears showing all suggestions with confidence bars. Select the tags you want and click **Add selected**.
+  </Step>
+</Steps>
+
+### 3. On File Open
+
+When you open a note, Auto Tagger automatically checks if it should suggest tags.
+
+- If the note has no tags, you'll get suggestions after a 500ms delay
+- If the note has some tags, it will suggest additional related tags
+
+## Accepting Tags
+
+When you accept a tag, Auto Tagger inserts it according to your **Tag placement** setting:
+
+<Tabs>
+  <Tab title="First Line (Default)">
+    Tags are inserted on the first content line (after frontmatter if present):
+
+    ```markdown
+    ---
+    title: My Note
+    ---
+
+    #productivity #workflow
+
+    Your note content here...
+    ```
+
+    If the first line already has tags, the new tag is appended to that line.
+  </Tab>
+
+  <Tab title="Frontmatter">
+    Tags are added to the YAML frontmatter `tags` field:
+
+    ```markdown
+    ---
+    title: My Note
+    tags:
+      - productivity
+      - workflow
+    ---
+
+    Your note content here...
+    ```
+  </Tab>
+
+  <Tab title="End of Current Line">
+    The tag is appended to the end of the line where your cursor is:
+
+    ```markdown
+    This is my note content #productivity #workflow
+    ```
+  </Tab>
+</Tabs>
+
+## Configuring Your Workflow
+
+Fine-tune Auto Tagger for your needs in **Settings** → **Auto Tagger**:
+
+<Accordion title="Adjust suggestion timing">
+  Change the **Check delay** setting to control when suggestions appear:
+  
+  - Lower values (500-1000ms): More responsive, but may interrupt your writing
+  - Higher values (2000-5000ms): Less intrusive, but slower to respond
+  
+  Default: 2000ms
+</Accordion>
+
+<Accordion title="Control suggestion quantity">
+  Set **Max suggestions** to limit how many tags are offered at once:
+  
+  - Lower values (1-3): Only show the most confident matches
+  - Higher values (5-10): See more options, including less certain matches
+  
+  Default: 5
+</Accordion>
+
+<Accordion title="Filter by confidence">
+  Adjust **Minimum confidence** to control suggestion quality:
+  
+  - Higher values (0.02-0.05): Only highly relevant tags
+  - Lower values (0.005-0.01): More suggestions, potentially less accurate
+  
+  Default: 0.01
+</Accordion>
+
+<Accordion title="Disable auto-suggestions">
+  Turn off **Auto-suggest while editing** to only get suggestions via manual command or on file open.
+</Accordion>
+
+## Rescanning Your Vault
+
+As you add more tags to your notes, you should rescan your vault to improve suggestions:
+
+<Steps>
+  <Step title="Open settings">
+    Go to **Settings** → **Auto Tagger**.
+  </Step>
+
+  <Step title="Click Rescan vault">
+    Click the **Rescan now** button in the **Rescan vault** section.
+  </Step>
+
+  <Step title="Wait for completion">
+    A notice will show "Done: X tags from Y notes" when finished.
+  </Step>
+</Steps>
+
+<Tip>
+  Rescan after:
+  - Bulk-tagging multiple notes
+  - Creating new tags
+  - Reorganizing your tagging system
+</Tip>
+
+## Tips for Better Suggestions
+
+<CardGroup cols={2}>
+  <Card title="Tag consistently" icon="check">
+    Use the same tags for similar content. Inconsistent tagging confuses the model.
+  </Card>
+  <Card title="Use descriptive tags" icon="tag">
+    Specific tags like `#machine-learning` work better than vague ones like `#tech`.
+  </Card>
+  <Card title="Tag multiple notes" icon="copy">
+    Each tag needs at least 2 documents to generate suggestions.
+  </Card>
+  <Card title="Write substantial content" icon="file-lines">
+    Longer notes with more distinctive words produce better suggestions.
+  </Card>
+</CardGroup>
+
+## Troubleshooting
+
+<Accordion title="I'm not getting any suggestions">
+  **Possible causes:**
+  - Your vault has fewer than 2 documents with the same tag
+  - The minimum confidence threshold is too high
+  - The note doesn't have enough text to analyze
+  
+  **Solutions:**
+  - Add tags to more notes and rescan
+  - Lower the minimum confidence in settings
+  - Write at least 2-3 paragraphs of content
+</Accordion>
+
+<Accordion title="Suggestions are not relevant">
+  **Possible causes:**
+  - Your existing tags are inconsistently applied
+  - The minimum confidence threshold is too low
+  - The vault hasn't been rescanned recently
+  
+  **Solutions:**
+  - Review and standardize your existing tags
+  - Increase the minimum confidence in settings
+  - Click **Rescan now** in settings
+</Accordion>
+
+<Accordion title="Suggestions appear too slowly/quickly">
+  Adjust the **Check delay** setting in **Settings** → **Auto Tagger**. Lower values respond faster but may interrupt your writing.
+</Accordion>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Learn How It Works" icon="brain" href="/how-it-works">
+    Understand the TF-IDF algorithm behind Auto Tagger
+  </Card>
+  <Card title="Explore Settings" icon="sliders" href="/settings">
+    Deep dive into all configuration options
+  </Card>
+  <Card title="Usage Tips" icon="lightbulb" href="/usage-tips">
+    Best practices for optimal suggestions
+  </Card>
+  <Card title="Troubleshooting" icon="wrench" href="/troubleshooting">
+    Solve common issues
+  </Card>
+</CardGroup>

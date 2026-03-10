@@ -1,0 +1,510 @@
+---
+title: Advanced Configuration
+description: Technical settings and configuration options for Auto Tagger
+---
+
+Auto Tagger provides several configuration options to fine-tune suggestion behavior and tag insertion preferences.
+
+## Settings Overview
+
+### User-Facing Settings
+
+All settings are available in **Settings → Community Plugins → Auto Tagger**:
+
+```typescript
+// From main.ts:16-22
+interface AutoTaggerSettings {
+    debounceMs: number;                               // Typing delay before check
+    tagLocation: "first-line" | "frontmatter" | "inline-end";  // Where to insert tags
+    minScore: number;                                  // Minimum confidence threshold
+    maxSuggestions: number;                           // Max tags to suggest
+    autoSuggest: boolean;                             // Enable real-time suggestions
+}
+```
+
+### Default Values
+
+```typescript
+// From main.ts:24-30
+const DEFAULT_SETTINGS: AutoTaggerSettings = {
+    debounceMs: 2000,
+    tagLocation: "first-line",
+    minScore: 0.01,
+    maxSuggestions: 5,
+    autoSuggest: true,
+};
+```
+
+## Detailed Settings
+
+### Auto-suggest While Editing
+
+**Setting**: `autoSuggest`  
+**Type**: Boolean  
+**Default**: `true`
+
+Enables or disables real-time tag suggestions as you type.
+
+<Accordion title="How it works">
+When enabled, the plugin listens to the `editor-change` event:
+
+```typescript
+// From main.ts:65-69
+this.registerEvent(
+    this.app.workspace.on("editor-change", (editor) => {
+        if (this.settings.autoSuggest) this.scheduleCheck(editor);
+    })
+);
+```
+
+Each keystroke schedules a debounced check. When disabled, you can still manually trigger suggestions via the command palette.
+</Accordion>
+
+<Warning>
+If you find auto-suggestions intrusive, disable this setting and use the "Suggest tags for current note" command instead.
+</Warning>
+
+### Check Delay (Debounce)
+
+**Setting**: `debounceMs`  
+**Type**: Number (milliseconds)  
+**Default**: `2000`  
+**Range**: `500` - `∞`
+
+Time to wait after you stop typing before running the suggestion algorithm.
+
+```typescript
+// From main.ts:144-148
+private scheduleCheck(editor: Editor) {
+    if (this.debounceTimer) clearTimeout(this.debounceTimer);
+    this.debounceTimer = setTimeout(() => {
+        this.checkAndSuggest(editor);
+    }, this.settings.debounceMs);
+}
+```
+
+<Accordion title="Choosing the right delay">
+- **500-1000ms**: Very responsive, but may feel intrusive during active writing
+- **2000ms** (default): Good balance between responsiveness and not interrupting flow
+- **3000-5000ms**: Less intrusive, waits for longer pauses
+- **10000ms+**: Only triggers after significant breaks
+
+Consider your writing style:
+- Fast typists → higher delay
+- Slow, thoughtful writers → lower delay
+- Pair programming → higher delay
+</Accordion>
+
+### Tag Placement
+
+**Setting**: `tagLocation`  
+**Type**: `"first-line"` | `"frontmatter"` | `"inline-end"`  
+**Default**: `"first-line"`
+
+Controls where accepted tags are inserted into your notes.
+
+#### First Line (Inline Tags)
+
+```typescript
+// From main.ts:298-326
+if (this.settings.tagLocation === "first-line") {
+    const content = editor.getValue();
+    let firstLine = 0;
+    const fmMatch = content.match(/^---\n[\s\S]*?\n---\n?/);
+    if (fmMatch) {
+        firstLine = fmMatch[0].split("\n").length - 1;
+        // Skip empty lines after frontmatter
+        while (
+            firstLine < editor.lineCount() &&
+            editor.getLine(firstLine).trim() === ""
+        ) {
+            firstLine++;
+        }
+    }
+
+    const lineText = editor.getLine(firstLine);
+    // Check if first line already has tags — append to it
+    if (/^#[a-zA-Z]/.test(lineText.trim())) {
+        editor.replaceRange(` #${tag}`, {
+            line: firstLine,
+            ch: lineText.length,
+        });
+    } else {
+        // Insert a new tag line before the first content line
+        editor.replaceRange(`#${tag}\n`, {
+            line: firstLine,
+            ch: 0,
+        });
+    }
+}
+```
+
+**Behavior:**
+- Skips frontmatter if present
+- If the first content line already has tags, appends to it: `#existing-tag #new-tag`
+- Otherwise, creates a new line: `#new-tag` followed by a newline
+
+**Example output:**
+```markdown
+---
+title: My Note
+---
+
+#javascript #web-development
+
+Note content here...
+```
+
+#### Frontmatter (YAML Tags)
+
+```typescript
+// From main.ts:291-296
+if (this.settings.tagLocation === "frontmatter") {
+    await this.app.fileManager.processFrontMatter(file, (fm) => {
+        if (!fm.tags) fm.tags = [];
+        if (!Array.isArray(fm.tags)) fm.tags = [fm.tags];
+        if (!fm.tags.includes(tag)) fm.tags.push(tag);
+    });
+}
+```
+
+**Behavior:**
+- Uses Obsidian's built-in frontmatter API
+- Creates a `tags` array if it doesn't exist
+- Converts single tags to arrays if needed
+- Avoids duplicates
+
+**Example output:**
+```markdown
+---
+title: My Note
+tags:
+  - javascript
+  - web-development
+---
+
+Note content here...
+```
+
+<Note>
+Frontmatter tags are recognized by Obsidian's search and are displayed in the tag pane, making them ideal for organizational purposes.
+</Note>
+
+#### Inline End
+
+```typescript
+// From main.ts:327-335
+else {
+    // inline-end: append to current line
+    const cursor = editor.getCursor();
+    const line = editor.getLine(cursor.line);
+    editor.replaceRange(` #${tag}`, {
+        line: cursor.line,
+        ch: line.length,
+    });
+}
+```
+
+**Behavior:**
+- Appends tag to the end of the current line where your cursor is
+- Useful for adding context-specific tags mid-document
+
+**Example output:**
+```markdown
+This paragraph discusses React hooks. #react #hooks
+```
+
+### Maximum Suggestions
+
+**Setting**: `maxSuggestions`  
+**Type**: Number  
+**Default**: `5`  
+**Range**: `1` - `10`
+
+Limits how many tags to suggest at once.
+
+```typescript
+// From main.ts:165-171
+const suggestions = this.model
+    .suggest(
+        content,
+        existingTags,
+        this.settings.maxSuggestions,
+        this.settings.minScore
+    )
+    .filter((s) => !seen.has(s.tag));
+```
+
+<Accordion title="Real-time vs modal behavior">
+**Real-time suggestions (notice bar):**
+- Shows suggestions one at a time
+- Uses `maxSuggestions` to limit total queued suggestions
+- "Show all" button displays remaining suggestions in modal
+
+**Manual trigger (modal):**
+```typescript
+// From main.ts:262-267
+const suggestions = this.model.suggest(
+    content,
+    existingTags,
+    this.settings.maxSuggestions * 2,  // Double the limit for manual triggers
+    this.settings.minScore
+);
+```
+
+When you manually trigger suggestions via command palette, the plugin shows up to `maxSuggestions × 2` options in the modal.
+</Accordion>
+
+### Minimum Confidence
+
+**Setting**: `minScore`  
+**Type**: Number  
+**Default**: `0.01`  
+**Range**: `0.005` - `0.1`
+
+Minimum similarity score required for a tag to be suggested.
+
+```typescript
+// From model.ts:144-146
+if (score >= minScore) {
+    results.push({ tag, score });
+}
+```
+
+<Accordion title="Understanding confidence scores">
+The score represents combined cosine similarity and co-occurrence boost:
+
+- **0.001 - 0.01**: Weak similarity, may include tangentially related tags
+- **0.01 - 0.05**: Moderate similarity, reasonable suggestions
+- **0.05 - 0.2**: Strong similarity, highly relevant tags
+- **0.2+**: Very strong similarity, almost certain match
+
+**Tuning recommendations:**
+- **Lower minScore** (0.005): More suggestions, including creative/unexpected tags
+- **Higher minScore** (0.05): Fewer but more confident suggestions
+- **Default** (0.01): Balanced approach
+
+Note: Actual score ranges depend on your vault's content and tagging patterns.
+</Accordion>
+
+<Warning>
+Setting `minScore` too low (< 0.005) may result in many irrelevant suggestions. Setting it too high (> 0.1) may result in no suggestions for most notes.
+</Warning>
+
+## Commands
+
+Auto Tagger registers two commands accessible via the command palette (Ctrl/Cmd+P):
+
+### Suggest Tags for Current Note
+
+**ID**: `suggest-tags`
+
+```typescript
+// From main.ts:96-104
+this.addCommand({
+    id: "suggest-tags",
+    name: "Suggest tags for current note",
+    editorCallback: (editor, view) => {
+        if (!view.file) return;
+        this.suggestedForFile.delete(view.file.path);
+        this.showAllSuggestions(editor, view.file);
+    },
+});
+```
+
+**Behavior:**
+- Opens a modal with all suggestions (up to `maxSuggestions × 2`)
+- Top 3 suggestions are pre-selected
+- Shows visual confidence bars
+- Allows multi-select
+
+<Info>
+This command bypasses the "already suggested" cache, so you can trigger it multiple times to re-evaluate suggestions.
+</Info>
+
+### Rescan Vault for Tag Patterns
+
+**ID**: `rescan-vault`
+
+```typescript
+// From main.ts:106-118
+this.addCommand({
+    id: "rescan-vault",
+    name: "Rescan vault for tag patterns",
+    callback: async () => {
+        const notice = new Notice("Rescanning vault...", 0);
+        const stats = await this.model.scan(this.app);
+        notice.hide();
+        this.suggestedForFile.clear();
+        new Notice(
+            `Done: ${stats.uniqueTags} tags from ${stats.taggedDocuments} notes`
+        );
+    },
+});
+```
+
+**When to rescan:**
+- After bulk-tagging many notes
+- After importing notes from another vault
+- After creating many new notes with tags
+- If suggestions seem outdated
+
+<Note>
+Rescanning is relatively fast but blocks the UI briefly. On a vault with 1000 notes, expect 2-5 seconds.
+</Note>
+
+## Suggestion Tracking
+
+The plugin tracks which suggestions have been shown for each file to avoid repetition:
+
+```typescript
+// From main.ts:38
+private suggestedForFile = new Map<string, Set<string>>();
+
+// From main.ts:160-163
+if (!this.suggestedForFile.has(file.path)) {
+    this.suggestedForFile.set(file.path, new Set());
+}
+const seen = this.suggestedForFile.get(file.path)!;
+```
+
+**Cache behavior:**
+- Persists during the Obsidian session
+- Cleared when you close and reopen Obsidian
+- Cleared when you rescan the vault
+- Reset when you switch away from and back to a file
+
+```typescript
+// From main.ts:88-89
+this.suggestedForFile.delete(file.path);
+this.checkAndSuggest(editor);
+```
+
+<Accordion title="Why track suggestions?">
+Without tracking, the plugin would suggest the same tags repeatedly every time you pause typing. Tracking ensures:
+
+1. You only see each suggestion once per editing session
+2. After accepting/declining a tag, you won't see it again
+3. As you add content, new suggestions emerge based on updated content
+
+You can bypass the cache by manually triggering suggestions via command palette.
+</Accordion>
+
+## Tag Extraction
+
+The plugin extracts existing tags from both inline and frontmatter formats:
+
+```typescript
+// From model.ts:155-194
+extractTags(content: string): Set<string> {
+    const tags = new Set<string>();
+
+    // Inline tags: #tag-name or #nested/tag
+    const inlineRegex = /(?:^|\s)#([a-zA-Z][a-zA-Z0-9_/\-]*)/g;
+    let m;
+    while ((m = inlineRegex.exec(content)) !== null) {
+        tags.add(m[1]);
+    }
+
+    // Frontmatter tags
+    const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+    if (fmMatch) {
+        const fm = fmMatch[1];
+        // Inline array: tags: [a, b]
+        const arr = fm.match(/^tags:\s*\[([^\]]*)\]/m);
+        if (arr) {
+            arr[1].split(",").forEach((t) => {
+                const v = t.trim().replace(/^["']|["']$/g, "").replace(/^#/, "");
+                if (v) tags.add(v);
+            });
+        }
+        // YAML list: tags:\n  - a\n  - b
+        const list = fm.match(/^tags:\s*\n((?:\s*-\s*.+\n?)*)  /m);
+        if (list) {
+            list[1].match(/^\s*-\s*(.+)$/gm)?.forEach((item) => {
+                const v = item.replace(/^\s*-\s*/, "").trim()
+                    .replace(/^["']|["']$/g, "").replace(/^#/, "");
+                if (v) tags.add(v);
+            });
+        }
+    }
+
+    return tags;
+}
+```
+
+**Supported formats:**
+
+1. **Inline tags**: `#tag`, `#nested/tag`, `#tag-with-dashes`
+2. **Frontmatter inline array**: `tags: [javascript, web-dev]`
+3. **Frontmatter YAML list**:
+   ```yaml
+   tags:
+     - javascript
+     - web-dev
+   ```
+
+<Info>
+The plugin normalizes tags by removing `#` prefixes and quotes, so `#javascript`, `"javascript"`, and `javascript` are all treated as the same tag.
+</Info>
+
+## Model Initialization
+
+The plugin scans your vault automatically when Obsidian finishes loading:
+
+```typescript
+// From main.ts:48-62
+this.app.workspace.onLayoutReady(async () => {
+    const notice = new Notice("Auto Tagger: Scanning vault...", 0);
+    try {
+        const stats = await this.model.scan(this.app);
+        notice.hide();
+        new Notice(
+            `Auto Tagger: ${stats.uniqueTags} tags learned from ${stats.taggedDocuments} notes`
+        );
+    } catch (e) {
+        notice.hide();
+        console.error("Auto Tagger scan error:", e);
+        new Notice("Auto Tagger: Scan failed. See console.");
+    }
+});
+```
+
+<Warning>
+The model is not ready (`model.isReady === false`) until the initial scan completes. Suggestions requested before this will return empty results.
+</Warning>
+
+## Performance Considerations
+
+### Memory Usage
+
+The plugin stores:
+- Tag profiles: `O(unique_tags × unique_words)`
+- Co-occurrence matrix: `O(unique_tags²)`
+- Global document frequency: `O(unique_words)`
+
+For a typical vault:
+- 500 unique tags
+- 5,000 unique words
+- Memory: ~5-10 MB
+
+### CPU Usage
+
+**Vault scan:**
+- Time complexity: `O(documents × words_per_document)`
+- Batched with UI yields to prevent freezing
+- Typical time: 1-3 seconds for 1000 notes
+
+**Suggestion generation:**
+- Time complexity: `O(unique_tags × unique_words_in_note)`
+- Typical time: < 50ms
+- Debounced to avoid excessive computation
+
+<Accordion title="Optimization tips for large vaults">
+If you have a very large vault (5000+ notes):
+
+1. Increase `debounceMs` to 3000-5000 to reduce CPU usage
+2. Decrease `maxSuggestions` to 3 to reduce computation
+3. Consider disabling `autoSuggest` and using manual trigger only
+4. Rescan only when necessary (not after every small change)
+</Accordion>

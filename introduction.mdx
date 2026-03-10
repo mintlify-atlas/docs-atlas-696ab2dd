@@ -1,0 +1,79 @@
+---
+title: Introduction
+description: Learn how Auto Tagger automatically suggests tags for your Obsidian notes using TF-IDF analysis
+---
+
+# What is Auto Tagger?
+
+Auto Tagger is an Obsidian plugin that automatically suggests tags for your notes based on your vault's existing tagging patterns. It uses statistical analysis to learn which words are associated with which tags across your entire vault — no AI or external services required.
+
+<Note>
+  Auto Tagger learns from **your** tagging habits. The more consistently you tag your notes, the better the suggestions become.
+</Note>
+
+## How It Works
+
+Auto Tagger uses a four-stage process to suggest relevant tags:
+
+<Steps>
+  <Step title="Vault Scan">
+    On startup, the plugin scans all your notes and builds a statistical model of which words are associated with which tags.
+  </Step>
+  
+  <Step title="TF-IDF Vectors">
+    Each tag gets a weighted word profile using [TF-IDF](https://en.wikipedia.org/wiki/Tf%E2%80%93idf) (Term Frequency-Inverse Document Frequency). Rare, distinctive words get more weight than common ones.
+  </Step>
+  
+  <Step title="Cosine Similarity">
+    When you open or edit a note, the plugin compares the note's word vector against each tag's profile using cosine similarity to find the best matches.
+  </Step>
+  
+  <Step title="Co-occurrence Boost">
+    Tags that frequently appear together in your vault get an additional relevance boost, improving suggestion accuracy.
+  </Step>
+</Steps>
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="Real-time Suggestions" icon="bolt">
+    Get tag suggestions as you type, with configurable debounce delay to avoid interruptions.
+  </Card>
+  
+  <Card title="Multiple Trigger Methods" icon="wand-magic-sparkles">
+    Suggestions appear when opening a note, while editing, or via command palette: "Suggest tags for current note".
+  </Card>
+  
+  <Card title="Flexible Tag Placement" icon="location-dot">
+    Insert tags at the first line (inline), in frontmatter (YAML), or at the end of the current line.
+  </Card>
+  
+  <Card title="Smart Filtering" icon="filter">
+    Adjustable confidence threshold and max suggestions to control suggestion quality and quantity.
+  </Card>
+  
+  <Card title="Interactive UI" icon="hand-pointer">
+    Accept, skip, or dismiss suggestions one at a time, or view all suggestions in a modal dialog.
+  </Card>
+  
+  <Card title="Multilingual Support" icon="language">
+    Supports both English and German content with built-in stopword filtering.
+  </Card>
+</CardGroup>
+
+## When to Use Auto Tagger
+
+Auto Tagger is ideal for:
+
+- **Large vaults** with existing tagging patterns that you want to maintain consistency with
+- **Knowledge management** workflows where tags help organize and retrieve information
+- **Personal wikis** where you want to discover connections between notes through shared tags
+- **Research notes** where consistent tagging helps track topics and themes
+
+<Warning>
+  The plugin needs **at least 2 documents** with a tag before it can suggest that tag. Start by manually tagging a handful of notes to establish patterns.
+</Warning>
+
+## What's Next?
+
+Ready to get started? Follow the [installation guide](/installation) to add Auto Tagger to your vault, then check out the [quickstart guide](/quickstart) to get your first tag suggestions.

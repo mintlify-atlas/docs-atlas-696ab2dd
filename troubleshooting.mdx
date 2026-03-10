@@ -1,0 +1,637 @@
+---
+title: Troubleshooting
+description: Common issues and solutions for Auto Tagger
+---
+
+This page covers common issues you might encounter with Auto Tagger and how to resolve them.
+
+## No Suggestions Appearing
+
+### Model Not Ready
+
+**Symptom:** No suggestions appear, even when manually triggered.
+
+**Cause:** The model hasn't finished scanning your vault yet.
+
+```typescript
+// From model.ts:85-90
+suggest(...): TagSuggestion[] {
+    if (!this._ready || this.taggedDocuments === 0) return [];
+    // ...
+}
+```
+
+**Solution:**
+
+1. Wait for the initial vault scan to complete (shown in a notice)
+2. Check if the scan failed by opening the developer console (Ctrl+Shift+I)
+3. Manually trigger a rescan: **Settings → Auto Tagger → Rescan vault**
+
+<Info>
+The initial scan runs automatically when Obsidian finishes loading. For large vaults (1000+ notes), this may take 5-10 seconds.
+</Info>
+
+### No Tagged Documents
+
+**Symptom:** Model is ready but still no suggestions.
+
+**Cause:** Your vault has no notes with tags, or very few tagged notes.
+
+```typescript
+// From model.ts:233-234
+if (tags.size === 0) return; // only learn from tagged documents
+this.taggedDocuments++;
+```
+
+**Solution:**
+
+1. Check Settings → Auto Tagger for model statistics
+2. Look for: "X tags learned from Y tagged notes"
+3. If Y is 0 or very low, add tags to your existing notes
+4. Each tag needs to appear in at least 2 documents to be suggested
+
+<Warning>
+The plugin only learns from documents that already have tags. If you have untagged notes, the model has no training data.
+</Warning>
+
+### Note Too Short
+
+**Symptom:** Suggestions work on long notes but not short ones.
+
+**Cause:** The note has fewer than 3 words after tokenization.
+
+```typescript
+// From model.ts:94
+if (words.length < 3) return [];
+```
+
+**Solution:**
+
+- Write at least a few sentences before expecting suggestions
+- Short notes (< 10 words) don't have enough content for meaningful similarity calculation
+
+### Scores Below Threshold
+
+**Symptom:** Some notes get suggestions, others don't.
+
+**Cause:** The similarity scores are below your `minScore` threshold.
+
+```typescript
+// From model.ts:144-146
+if (score >= minScore) {
+    results.push({ tag, score });
+}
+```
+
+**Solution:**
+
+1. Go to **Settings → Auto Tagger → Minimum confidence**
+2. Lower the slider (try 0.005)
+3. Test suggestions again
+
+<Accordion title="Why are my scores so low?">
+Low scores can happen when:
+
+- Your note's vocabulary doesn't overlap much with tagged documents
+- You're writing about a new topic not covered by existing tags
+- Your tagging patterns are inconsistent
+- The note is very different from other notes with similar tags
+
+Solutions:
+- Add more diverse tagged notes to improve the model
+- Create new tags for new topics
+- Be more consistent with tagging
+</Accordion>
+
+## Irrelevant Suggestions
+
+### Score Threshold Too Low
+
+**Symptom:** Getting too many unrelated tag suggestions.
+
+**Cause:** `minScore` is set too low, allowing weak matches.
+
+**Solution:**
+
+1. Go to **Settings → Auto Tagger → Minimum confidence**
+2. Raise the slider (try 0.03 or 0.05)
+3. You'll get fewer but more relevant suggestions
+
+### Inconsistent Tagging Patterns
+
+**Symptom:** Tags are suggested for wrong topics.
+
+**Cause:** Your existing tagging is inconsistent. For example, using `#javascript` on notes that are actually about Python.
+
+**Solution:**
+
+1. Review your existing tags for consistency
+2. Remove or correct misplaced tags
+3. Run **Rescan vault** to update the model
+
+<Note>
+The plugin learns from YOUR patterns. If you inconsistently tag `#work` on both project notes and personal journal entries, the model will suggest `#work` for both types of content.
+</Note>
+
+### Tags from Unrelated Documents
+
+**Symptom:** A tag is suggested even though the content seems unrelated.
+
+**Cause:** The tag's profile contains common words that appear in many contexts.
+
+**Example:**
+
+```typescript
+// Tag profile for #project might include common words like:
+// "task", "deadline", "plan", "work", "today"
+// These words appear in many note types, causing false matches
+```
+
+**Solution:**
+
+- Use more specific tags: `#project/client-alpha` instead of `#project`
+- Add descriptive content to notes so distinctive words outweigh common ones
+- Increase `minScore` to filter weaker matches
+
+## Performance Issues
+
+### Vault Scan Takes Too Long
+
+**Symptom:** Initial scan or rescan takes more than 30 seconds.
+
+**Cause:** Very large vault (5000+ notes) or slow disk I/O.
+
+```typescript
+// From model.ts:63-76
+const BATCH = 100;
+for (let i = 0; i < files.length; i += BATCH) {
+    // Process batch...
+    onProgress?.(end / files.length);
+    if (end < files.length) {
+        await new Promise<void>((r) => setTimeout(r, 0)); // Yield to UI
+    }
+}
+```
+
+**Solution:**
+
+- Be patient during the initial scan (it only happens once per session)
+- Close other apps to free up system resources
+- Consider excluding large folders from your vault if they don't need tagging
+
+<Info>
+The plugin processes 100 files at a time with UI yields. For a 5000-note vault, expect 10-20 seconds on modern hardware.
+</Info>
+
+### UI Freezing
+
+**Symptom:** Obsidian becomes unresponsive during suggestion generation.
+
+**Cause:** Debounce is set too low, causing constant re-computation.
+
+**Solution:**
+
+1. Go to **Settings → Auto Tagger → Check delay**
+2. Increase to 3000-5000ms
+3. Consider disabling **Auto-suggest while editing**
+4. Use manual command trigger instead: **Suggest tags for current note**
+
+### Memory Usage
+
+**Symptom:** Obsidian uses excessive memory after enabling Auto Tagger.
+
+**Cause:** Large vocabulary and many unique tags create large in-memory data structures.
+
+**Typical memory usage:**
+- Small vault (100 notes, 50 tags): ~1-2 MB
+- Medium vault (1000 notes, 200 tags): ~5-10 MB
+- Large vault (5000 notes, 500 tags): ~20-30 MB
+
+**Solution:**
+
+- This is normal and usually not a problem
+- If memory is critically low, disable the plugin
+- Consider reducing the number of unique tags in your vault
+
+## Suggestion Behavior Issues
+
+### Same Suggestions Repeating
+
+**Symptom:** The plugin suggests the same tags over and over.
+
+**Cause:** Suggestion tracking cache is not working, or you're switching between files.
+
+```typescript
+// From main.ts:160-176
+if (!this.suggestedForFile.has(file.path)) {
+    this.suggestedForFile.set(file.path, new Set());
+}
+const seen = this.suggestedForFile.get(file.path)!;
+
+const suggestions = this.model
+    .suggest(...)
+    .filter((s) => !seen.has(s.tag));
+
+if (suggestions.length === 0) return;
+
+for (const s of suggestions) seen.add(s.tag);
+```
+
+**Solution:**
+
+- Cache is cleared when you switch away from a file and back
+- Cache is cleared when you rescan the vault
+- Cache is cleared when you restart Obsidian
+- This is by design to allow re-evaluation after content changes
+
+<Accordion title="Why does cache reset on file switch?">
+When you leave a file and come back, the plugin assumes:
+
+1. You might have added content elsewhere that changes suggestions
+2. You might have forgotten what was suggested earlier
+3. You want a fresh evaluation
+
+From main.ts:88-89:
+```typescript
+this.suggestedForFile.delete(file.path);
+this.checkAndSuggest(editor);
+```
+
+If you don't want this behavior, keep the file open continuously.
+</Accordion>
+
+### No Suggestions After Accepting Tags
+
+**Symptom:** After accepting a few tags, no more suggestions appear.
+
+**Cause:** You've exhausted all suggestions above the score threshold.
+
+**Solution:**
+
+1. Lower **Minimum confidence** in settings
+2. Add more content to the note to change its TF-IDF profile
+3. Manually trigger suggestions to get up to 2× more options
+
+### Tags Inserted in Wrong Location
+
+**Symptom:** Tags appear in unexpected places in the note.
+
+**Cause:** Tag placement setting doesn't match your expectation.
+
+**Check your setting:**
+
+- **First line**: Inserts before first content line (after frontmatter)
+- **Frontmatter**: Adds to YAML `tags:` array
+- **Inline end**: Appends to current line where cursor is
+
+```typescript
+// From main.ts:290-336
+private async addTag(editor: Editor, file: TFile, tag: string) {
+    if (this.settings.tagLocation === "frontmatter") {
+        // Add to frontmatter...
+    } else if (this.settings.tagLocation === "first-line") {
+        // Add to first line...
+    } else {
+        // inline-end: append to current line
+    }
+}
+```
+
+**Solution:**
+
+1. Go to **Settings → Auto Tagger → Tag placement**
+2. Choose your preferred location
+3. Test with a new suggestion
+
+<Warning>
+If you change tag placement after accepting some tags, the new setting only applies to newly accepted tags. Existing tags stay where they are.
+</Warning>
+
+## Tag Extraction Issues
+
+### Frontmatter Tags Not Recognized
+
+**Symptom:** Tags in frontmatter are not counted during vault scan.
+
+**Cause:** Incorrect YAML formatting.
+
+**Supported formats:**
+
+```yaml
+# ✅ Valid: YAML list
+tags:
+  - javascript
+  - react
+
+# ✅ Valid: Inline array
+tags: [javascript, react]
+
+# ✅ Valid: With quotes
+tags: ["javascript", "react"]
+
+# ✅ Valid: With hash symbol
+tags:
+  - #javascript
+  - #react
+
+# ❌ Invalid: Missing colon
+tags
+  - javascript
+
+# ❌ Invalid: Wrong indentation
+tags:
+- javascript
+
+# ❌ Invalid: Comma-separated string
+tags: javascript, react
+```
+
+**Solution:**
+
+1. Fix YAML formatting in affected notes
+2. Run **Rescan vault**
+
+<Info>
+The plugin uses regex-based parsing (not a full YAML parser), so complex formatting might not work. Stick to the standard formats above.
+</Info>
+
+### Nested Tags Not Working
+
+**Symptom:** Nested tags like `#project/alpha` are not suggested correctly.
+
+**Cause:** This is expected behavior. The plugin treats `#project/alpha` as a single unique tag.
+
+```typescript
+// From model.ts:159
+const inlineRegex = /(?:^|\s)#([a-zA-Z][a-zA-Z0-9_/\-]*)/g;
+```
+
+The regex captures the full path including `/`.
+
+**How it works:**
+
+- `#project/alpha` is a distinct tag from `#project` and `#project/beta`
+- Each nested tag needs its own 2+ document examples
+- There's no hierarchy inference (e.g., `#project/alpha` doesn't automatically learn from `#project`)
+
+**Solution:**
+
+- Ensure nested tags appear in at least 2 documents
+- Use consistent nested tag formatting
+- Consider using flatter tag structures if this is problematic
+
+### Tags with Special Characters
+
+**Symptom:** Tags with special characters are not extracted.
+
+**Supported characters:**
+- Letters: `a-zA-Z`
+- Numbers: `0-9`
+- Hyphens: `-`
+- Underscores: `_`
+- Slashes: `/` (for nesting)
+
+**Not supported:**
+- Spaces: `#my tag` → only `#my` is extracted
+- Dots: `#v2.0` → only `#v2` is extracted
+- Colons: `#note:important` → only `#note` is extracted
+- Parentheses, brackets, etc.
+
+**Solution:**
+
+- Use hyphens or underscores instead: `#my-tag`, `#v2_0`, `#note-important`
+- Avoid special characters in tags
+
+## Model Quality Issues
+
+### Model Not Learning New Patterns
+
+**Symptom:** After adding many new tagged notes, suggestions don't improve.
+
+**Cause:** Model hasn't been rescanned since adding new notes.
+
+**Solution:**
+
+1. Go to **Settings → Auto Tagger**
+2. Click **Rescan now**
+3. Wait for completion notice
+
+<Note>
+The model is built once at startup and reused. It doesn't automatically update when you modify notes. You must manually rescan.
+</Note>
+
+### Different Suggestions on Different Runs
+
+**Symptom:** Running "Suggest tags" multiple times gives different results.
+
+**Cause:** This should NOT happen. Suggestions are deterministic.
+
+**If it does happen:**
+
+1. Check if you're modifying the note between runs
+2. Check if other plugins are modifying the note (e.g., auto-formatters)
+3. Report as a bug if truly non-deterministic
+
+### Tags Never Suggested
+
+**Symptom:** A specific tag never appears in suggestions, even when it seems relevant.
+
+**Check these conditions:**
+
+```typescript
+// From model.ts:118-120
+if (existingTags.has(tag)) continue;          // Already in note?
+if (profile.documentCount < 2) continue;      // Appears in 2+ docs?
+if (profile.vectorNorm === 0) continue;       // Has any words?
+```
+
+**Solution:**
+
+1. Ensure the tag appears in at least 2 documents
+2. Ensure tagged documents have substantive content (not just titles)
+3. Check that the tag's documents contain words overlapping with your note
+4. Lower `minScore` to see if it appears with low confidence
+
+<Accordion title="Debugging a specific tag">
+To understand why a tag isn't suggested:
+
+1. Open developer console (Ctrl+Shift+I)
+2. Type: `app.plugins.plugins['auto-tagger'].model.getKnownTags()`
+3. Find your tag in the list. If not present, the tag wasn't found during scan
+4. Type: `app.plugins.plugins['auto-tagger'].model.getStats()`
+5. Check if your tag is counted in `uniqueTags`
+6. If present but not suggested, it likely has low similarity to your note
+</Accordion>
+
+## Integration Issues
+
+### Conflicts with Other Plugins
+
+**Symptom:** Auto Tagger behaves strangely when certain other plugins are enabled.
+
+**Potential conflicts:**
+
+- **Auto-formatting plugins**: May interfere with tag insertion
+- **Custom tag renderers**: May affect tag extraction regex
+- **Editor enhancement plugins**: May intercept editor events
+
+**Solution:**
+
+1. Disable other plugins temporarily
+2. Re-enable one at a time to identify the conflict
+3. Report incompatibility if found
+
+### Mobile vs Desktop Differences
+
+**Symptom:** Plugin works on desktop but not mobile (or vice versa).
+
+**Cause:** Performance differences or mobile-specific bugs.
+
+**Solution:**
+
+- On mobile, increase debounce delay to reduce CPU usage
+- Consider disabling auto-suggest on mobile
+- Use manual trigger only
+- Mobile has less memory, so very large vaults may struggle
+
+## Getting Help
+
+### Enable Debug Mode
+
+Open developer console (Ctrl+Shift+I) and run:
+
+```javascript
+app.plugins.plugins['auto-tagger'].model.getStats()
+```
+
+You'll see:
+
+```json
+{
+  "totalDocuments": 1000,
+  "taggedDocuments": 750,
+  "uniqueTags": 200,
+  "uniqueWords": 5000
+}
+```
+
+### Check Console for Errors
+
+```typescript
+// From main.ts:59-60
+console.error("Auto Tagger scan error:", e);
+new Notice("Auto Tagger: Scan failed. See console.");
+```
+
+If you see "Scan failed", check the console for details:
+
+1. Press Ctrl+Shift+I (Cmd+Option+I on Mac)
+2. Go to Console tab
+3. Look for red error messages
+4. Copy error message when reporting issues
+
+### Useful Commands for Debugging
+
+```javascript
+// Check if model is ready
+app.plugins.plugins['auto-tagger'].model.isReady
+
+// Get all known tags
+app.plugins.plugins['auto-tagger'].model.getKnownTags()
+
+// Get model statistics
+app.plugins.plugins['auto-tagger'].model.getStats()
+
+// Get current settings
+app.plugins.plugins['auto-tagger'].settings
+
+// Force a rescan
+await app.plugins.plugins['auto-tagger'].model.scan(app)
+```
+
+### Reporting Bugs
+
+When reporting issues, please include:
+
+1. Obsidian version
+2. Plugin version
+3. Vault statistics (number of notes, tags)
+4. Model stats from `getStats()`
+5. Console errors (if any)
+6. Steps to reproduce
+7. Expected vs actual behavior
+
+<Warning>
+Never share actual note content or sensitive vault data when reporting bugs. Stats and error messages are sufficient.
+</Warning>
+
+## Advanced Troubleshooting
+
+### Manually Inspect Model Data
+
+The model's internal state can be inspected via console:
+
+```javascript
+// Get tag profile for a specific tag
+const model = app.plugins.plugins['auto-tagger'].model;
+const profile = model.tagProfiles.get('javascript');
+
+console.log({
+    documentCount: profile.documentCount,
+    totalWords: profile.totalWordCount,
+    topWords: Array.from(profile.wordCounts.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10)
+});
+```
+
+<Accordion title="Understanding profile output">
+This shows you:
+
+- How many documents have the tag
+- Total word count across those documents
+- Top 10 most frequent words in tagged documents
+
+If the top words are too generic ("the", "is", "and"), stop words aren't being filtered correctly.
+</Accordion>
+
+### Reset Plugin State
+
+If the plugin is behaving erratically:
+
+1. Disable the plugin in Settings
+2. Close Obsidian
+3. Delete `.obsidian/plugins/auto-tagger/data.json` (this stores settings)
+4. Reopen Obsidian
+5. Re-enable the plugin
+6. Reconfigure settings
+
+<Warning>
+Deleting `data.json` resets all settings to defaults. The model itself is rebuilt on every startup, so no training data is lost.
+</Warning>
+
+### Performance Profiling
+
+If you suspect performance issues:
+
+```javascript
+console.time('scan');
+await app.plugins.plugins['auto-tagger'].model.scan(app);
+console.timeEnd('scan');
+
+console.time('suggest');
+const editor = app.workspace.activeEditor.editor;
+const content = editor.getValue();
+const tags = app.plugins.plugins['auto-tagger'].model.extractTags(content);
+const suggestions = app.plugins.plugins['auto-tagger'].model.suggest(
+    content, tags, 5, 0.01
+);
+console.timeEnd('suggest');
+console.log('Suggestions:', suggestions);
+```
+
+Typical times:
+- Scan: 1-5 seconds for 1000 notes
+- Suggest: 10-50ms
+
+If times are significantly higher, there may be a performance issue.

@@ -1,0 +1,199 @@
+---
+title: How It Works
+description: Understanding the TF-IDF algorithm and tag suggestion engine
+---
+
+Auto Tagger uses statistical analysis to learn from your existing tagging patterns. No AI or external services are required—everything runs locally in your vault.
+
+## Overview
+
+The plugin builds a mathematical model of word-tag associations by analyzing all tagged notes in your vault. When you open or edit a note, it compares the note's content against this model to suggest relevant tags.
+
+<Info>
+The plugin only learns from notes that already have tags. At least 2 documents must contain a tag before it can be suggested.
+</Info>
+
+## The Four-Step Process
+
+### 1. Vault Scanning
+
+When Obsidian starts (or when you manually trigger a rescan), the plugin:
+
+- Scans all markdown files in your vault (in batches of 100 for performance)
+- Extracts tags from both inline format (`#tag`) and frontmatter YAML
+- Tokenizes note content into words
+- Builds statistical profiles for each tag
+
+The scanner processes content in batches and yields to the UI thread between batches to keep Obsidian responsive during large vault scans.
+
+**What gets indexed:**
+- Words that are at least 3 characters long
+- Words that aren't stop words (common words like "the", "and", "is")
+- Words that aren't pure numbers
+- Content from note body (excluding frontmatter, code blocks, and images)
+
+**What gets filtered out:**
+- Frontmatter blocks
+- Code blocks (fenced and inline)
+- Image embeds
+- Link URLs (but link text is kept)
+- Wiki link paths
+- Existing tags
+- Stop words in English and German
+
+You can see the full stop word list in `src/stopwords.ts:1`.
+
+### 2. TF-IDF Vectors
+
+Once scanning completes, the plugin calculates **TF-IDF** (Term Frequency-Inverse Document Frequency) vectors for each tag.
+
+<Accordion title="What is TF-IDF?">
+TF-IDF is a statistical measure that reflects how important a word is to a tag across your entire vault.
+
+- **TF (Term Frequency)**: How often a word appears in notes with this tag
+- **IDF (Inverse Document Frequency)**: How rare the word is across all tagged documents
+
+Rare, distinctive words get higher weights than common ones. This helps the plugin focus on words that truly characterize a tag.
+</Accordion>
+
+**The math** (from `src/model.ts:294-301`):
+
+For each tag profile:
+```
+tf = word_count / total_words_in_tag
+df = number_of_documents_containing_word
+idf = log(1 + tagged_documents / df)
+weight = tf × idf
+```
+
+These weights are precomputed and stored as normalized vectors (using Euclidean norm) for fast comparison later.
+
+### 3. Cosine Similarity
+
+When you open or edit a note, the plugin:
+
+1. Tokenizes the current note content into a TF-IDF vector (using the same process)
+2. Compares this vector against each tag's precomputed vector using **cosine similarity**
+3. Filters out tags already present in the note
+4. Filters out tags that appear in fewer than 2 documents
+
+**Cosine similarity formula** (from `src/model.ts:123-129`):
+```
+score = dot_product(doc_vector, tag_vector) / (doc_norm × tag_norm)
+```
+
+This produces a score between 0 and 1, where higher values mean the note's content is more similar to documents typically tagged with that tag.
+
+<Note>
+Only tags that appear in at least 2 documents can be suggested. This prevents overfitting to single examples.
+</Note>
+
+### 4. Co-occurrence Boosting
+
+The final step applies a relevance boost based on **tag co-occurrence patterns** (from `src/model.ts:133-142`).
+
+If your note already has certain tags, and those tags frequently appear together with a candidate tag in your vault, the candidate's score is boosted:
+
+```
+co_rate = times_tags_appeared_together / existing_tag_document_count
+boosted_score = base_score × (1 + co_rate)
+```
+
+**Example:**
+If you have `#python` in your note, and `#programming` appears in 80% of your notes tagged with `#python`, then `#programming` gets a significant boost.
+
+This helps the plugin learn implicit tag hierarchies and related concepts from your existing patterns.
+
+## Content Extraction
+
+### Tag Extraction
+
+The plugin recognizes tags in two formats (from `src/model.ts:155-195`):
+
+**Inline tags:**
+```markdown
+#machine-learning #python #data/science
+```
+
+Supports alphanumeric characters, underscores, hyphens, and forward slashes (for nested tags).
+
+**Frontmatter tags:**
+```yaml
+---
+tags: [python, machine-learning]
+---
+```
+
+or
+
+```yaml
+---
+tags:
+  - python
+  - machine-learning
+---
+```
+
+Both formats are normalized (quotes and `#` prefixes are stripped).
+
+### Text Tokenization
+
+The tokenization process (from `src/model.ts:197-217`):
+
+1. Removes frontmatter blocks
+2. Removes code blocks (fenced and inline)
+3. Removes image embeds
+4. Extracts text from markdown links
+5. Extracts text from wiki links (ignoring aliases)
+6. Removes existing tags
+7. Removes heading markers and emphasis
+8. Splits on non-word boundaries
+9. Converts to lowercase
+10. Filters by length (≥3 characters), stop words, and pure numbers
+
+The tokenizer supports Unicode characters including German umlauts and accented characters (ä, ö, ü, ß, à, á, etc.).
+
+## Performance Considerations
+
+<Tabs>
+  <Tab title="Scanning">
+    **Vault scanning** processes files in batches of 100 and yields to the UI thread between batches (from `src/model.ts:63-76`). This keeps Obsidian responsive even with large vaults.
+
+    After scanning completes, you'll see a notice showing:
+    - Number of unique tags learned
+    - Number of tagged documents processed
+  </Tab>
+  
+  <Tab title="Suggestions">
+    **Tag suggestions** are debounced by default (2000ms). This prevents excessive computation while you're actively typing.
+
+    The suggestion algorithm:
+    - Skips notes with fewer than 3 words after tokenization
+    - Only compares against tags that appear in 2+ documents
+    - Precomputes tag vectors during scanning for O(1) lookups
+    - Uses cosine similarity for efficient vector comparison
+  </Tab>
+  
+  <Tab title="Memory">
+    The model stores:
+    - Global document frequency for each unique word
+    - Per-tag word counts and precomputed TF-IDF vectors
+    - Tag co-occurrence matrix
+
+    Memory usage scales with:
+    - Number of unique tags
+    - Number of unique words in tagged documents
+    - Number of tag pairs that co-occur
+  </Tab>
+</Tabs>
+
+## When to Rescan
+
+The model is built once at startup. You should manually rescan when:
+
+- You've added many new tags to existing notes
+- You've bulk-imported notes with tags
+- You've significantly restructured your tagging system
+- Tag suggestions seem outdated
+
+Use the "Rescan vault" command from the command palette or the button in settings.

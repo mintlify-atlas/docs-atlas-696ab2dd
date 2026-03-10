@@ -1,0 +1,221 @@
+---
+title: Contributing
+description: How to contribute to the Auto Tagger plugin development
+---
+
+## Development Setup
+
+Auto Tagger is an Obsidian plugin built with TypeScript and bundled with esbuild.
+
+### Prerequisites
+
+- Node.js (v16 or higher)
+- npm or yarn
+- An Obsidian vault for testing
+
+### Local Development
+
+<Steps>
+  <Step title="Clone the repository">
+    Clone the source code to your local machine:
+    ```bash
+    git clone <repository-url>
+    cd obsidian-auto-tagger
+    ```
+  </Step>
+
+  <Step title="Install dependencies">
+    Install the required npm packages:
+    ```bash
+    npm install
+    ```
+  </Step>
+
+  <Step title="Link to test vault">
+    Create a symlink from your Obsidian vault's plugin folder to the development directory:
+    ```bash
+    # Linux/Mac
+    ln -s $(pwd) /path/to/your/vault/.obsidian/plugins/auto-tagger
+    
+    # Windows
+    mklink /D "C:\path\to\vault\.obsidian\plugins\auto-tagger" "%cd%"
+    ```
+  </Step>
+
+  <Step title="Start development mode">
+    Run the development build with watch mode:
+    ```bash
+    npm run dev
+    ```
+    This runs esbuild in watch mode, automatically rebuilding when you save changes.
+  </Step>
+
+  <Step title="Reload in Obsidian">
+    In Obsidian, disable and re-enable the plugin (or restart Obsidian) to load changes.
+  </Step>
+</Steps>
+
+## Build Scripts
+
+The project uses npm scripts defined in `package.json`:
+
+<CodeGroup>
+```bash Development
+npm run dev
+```
+
+```bash Production
+npm run build
+```
+</CodeGroup>
+
+<ParamField path="dev" type="script">
+  Runs esbuild in watch mode with inline sourcemaps for debugging
+</ParamField>
+
+<ParamField path="build" type="script">
+  Runs TypeScript type checking, then creates a production build with minification and tree-shaking
+</ParamField>
+
+## Project Structure
+
+```
+src/
+├── main.ts          # Plugin entry point, UI, settings
+├── model.ts         # TagModel class, TF-IDF engine
+└── stopwords.ts     # Stop words for text processing
+
+esbuild.config.mjs   # Build configuration
+tsconfig.json        # TypeScript configuration
+package.json         # Dependencies and scripts
+```
+
+### Key Files
+
+<ResponseField name="src/main.ts" type="file">
+  Contains:
+  - `AutoTaggerPlugin` - Main plugin class
+  - `AutoTaggerSettings` - Settings interface
+  - `AutoTaggerSettingTab` - Settings UI
+  - `TagSuggestionModal` - Modal for showing all suggestions
+</ResponseField>
+
+<ResponseField name="src/model.ts" type="file">
+  Contains:
+  - `TagModel` - TF-IDF engine and tag suggestion logic
+  - `TagSuggestion` - Tag suggestion data structure
+  - `ModelStats` - Statistics about the learned model
+</ResponseField>
+
+## TypeScript Configuration
+
+The project uses TypeScript with strict null checks:
+
+```json
+{
+  "compilerOptions": {
+    "target": "ES6",
+    "module": "ESNext",
+    "moduleResolution": "node",
+    "strictNullChecks": true,
+    "noImplicitAny": true,
+    "lib": ["DOM", "ES5", "ES6", "ES7"]
+  }
+}
+```
+
+## Build Configuration
+
+The plugin uses esbuild for fast bundling:
+
+- **Entry point**: `src/main.ts`
+- **Output**: `main.js`
+- **Format**: CommonJS (required by Obsidian)
+- **Target**: ES2018
+- **External modules**: `obsidian`, `electron`, CodeMirror packages
+- **Development**: Inline sourcemaps, watch mode
+- **Production**: Minified, tree-shaken, no sourcemaps
+
+## Testing
+
+Currently, testing is manual:
+
+1. Run `npm run dev` to start watch mode
+2. Make changes to the source code
+3. Reload the plugin in Obsidian
+4. Test with a vault that has existing tags
+
+### Testing Checklist
+
+- Vault scanning on startup
+- Real-time suggestions while typing
+- Tag insertion in all three modes (first-line, frontmatter, inline-end)
+- Settings UI and persistence
+- Rescan vault command
+- Manual suggest command
+- Tag extraction from both inline tags and frontmatter
+
+## Contributing Guidelines
+
+### Code Style
+
+- Use TypeScript with strict type checking
+- Follow the existing code structure
+- Add comments for complex logic (especially in TF-IDF calculations)
+- Use descriptive variable names
+
+### Before Submitting
+
+<Steps>
+  <Step title="Run type checking">
+    ```bash
+    npm run build
+    ```
+    Ensure no TypeScript errors
+  </Step>
+
+  <Step title="Test thoroughly">
+    Test your changes with a real vault containing diverse tagging patterns
+  </Step>
+
+  <Step title="Document changes">
+    Update relevant documentation if you're adding features or changing behavior
+  </Step>
+</Steps>
+
+### Areas for Contribution
+
+- **Performance**: Optimize scanning for large vaults (10k+ notes)
+- **UI/UX**: Improve suggestion display and interaction
+- **Algorithms**: Enhance tag suggestion accuracy
+- **Testing**: Add automated tests for the model
+- **Internationalization**: Support for more languages in tokenization
+- **Documentation**: Improve user guides and API docs
+
+## License
+
+Auto Tagger is licensed under the MIT License:
+
+```
+MIT License
+
+Copyright (c) 2026 Linus Wittrin
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+```
+
+## Getting Help
+
+If you need help with development:
+
+- Check the Obsidian plugin development documentation
+- Review the source code comments
+- Open an issue on the GitHub repository

@@ -1,0 +1,300 @@
+---
+title: Settings
+description: Configure tag suggestion behavior and placement
+---
+
+Auto Tagger provides several settings to customize how and when tags are suggested. All settings are available in **Settings → Community Plugins → Auto Tagger**.
+
+## Model Statistics
+
+At the top of the settings page, you'll see statistics about the current model (from `src/main.ts:439-445`):
+
+```
+42 tags learned from 156 tagged notes (320 total). 1,847 unique words indexed.
+```
+
+This tells you:
+- **Unique tags**: Total number of distinct tags the plugin has learned
+- **Tagged notes**: Number of notes that contained at least one tag
+- **Total documents**: All markdown files in your vault
+- **Unique words**: Size of the vocabulary after tokenization and filtering
+
+<Info>
+If this section doesn't appear, the vault hasn't been scanned yet. Wait a moment after enabling the plugin, or use the "Rescan vault" command.
+</Info>
+
+## Suggestion Behavior
+
+### Auto-suggest While Editing
+
+<Tabs>
+  <Tab title="Description">
+    Controls whether the plugin automatically suggests tags as you type.
+
+    **Default:** `true` (enabled)
+
+    **Interface location:** `src/main.ts:447-457`
+  </Tab>
+  
+  <Tab title="When to Enable">
+    ✅ **Enable if:**
+    - You want real-time feedback while writing
+    - You frequently forget to tag new notes
+    - You like proactive suggestions
+
+    ❌ **Disable if:**
+    - You find auto-suggestions distracting
+    - You prefer to manually trigger suggestions
+    - You have a very large vault and notice performance issues
+  </Tab>
+  
+  <Tab title="Alternative">
+    If disabled, you can still trigger suggestions manually:
+    - Open command palette (`Ctrl/Cmd+P`)
+    - Run "Suggest tags for current note"
+    - Or suggestions will appear when you open a note
+  </Tab>
+</Tabs>
+
+### Check Delay
+
+**What it controls:** Debounce time in milliseconds after you stop typing before the plugin checks for suggestions.
+
+**Default:** `2000` (2 seconds)
+
+**Range:** Minimum 500ms
+
+**Interface location:** `src/main.ts:459-477`
+
+<Accordion title="How debouncing works">
+When you type in a note, the plugin waits for this duration of inactivity before analyzing the content. This prevents excessive computation while you're actively writing.
+
+- **Lower values** (500-1000ms): More responsive, but may impact performance
+- **Higher values** (3000-5000ms): Less intrusive, suggestions appear after longer pauses
+</Accordion>
+
+**Recommended values:**
+- Fast typists: 2500-3000ms
+- Prefer immediate feedback: 1000-1500ms
+- Large vaults (1000+ notes): 3000ms+
+
+## Tag Placement
+
+**What it controls:** Where accepted tags are inserted into your note.
+
+**Default:** `first-line`
+
+**Options:**
+
+<Tabs>
+  <Tab title="First Line (Inline)">
+    **Value:** `first-line`
+
+    Inserts tags as inline tags at the beginning of the note content (after frontmatter if present).
+
+    **Behavior** (from `src/main.ts:298-326`):
+    - Skips frontmatter block if present
+    - If first content line already has tags, appends to that line
+    - Otherwise, creates a new tag line before first content
+
+    **Example:**
+    ```markdown
+    ---
+    title: My Note
+    ---
+    
+    #python #data-science
+    
+    Note content starts here...
+    ```
+
+    **Best for:**
+    - Visual tag organization
+    - Quick scanning in preview mode
+    - Consistency with manual inline tagging
+  </Tab>
+  
+  <Tab title="Frontmatter (YAML)">
+    **Value:** `frontmatter`
+
+    Adds tags to the YAML frontmatter `tags` array.
+
+    **Behavior** (from `src/main.ts:291-296`):
+    - Creates `tags` array if it doesn't exist
+    - Converts single tag to array if needed
+    - Appends to existing array (no duplicates)
+
+    **Example:**
+    ```yaml
+    ---
+    title: My Note
+    tags:
+      - python
+      - data-science
+      - machine-learning
+    ---
+    ```
+
+    **Best for:**
+    - Dataview queries and tag-based searches
+    - Cleaner note body
+    - Integration with other plugins that read frontmatter
+  </Tab>
+  
+  <Tab title="End of Current Line">
+    **Value:** `inline-end`
+
+    Appends tag to the end of the line where your cursor is currently positioned.
+
+    **Behavior** (from `src/main.ts:328-335`):
+    - Gets cursor position
+    - Appends ` #tag` to end of that line
+
+    **Example:**
+    ```markdown
+    This is a sentence about Python programming. #python #programming
+    ```
+
+    **Best for:**
+    - Contextual tagging (tag specific paragraphs)
+    - Inline annotation style
+    - Fine-grained topic marking
+
+    <Warning>
+    This option places tags exactly where your cursor is. Be careful when using it with lists, headings, or code blocks.
+    </Warning>
+  </Tab>
+</Tabs>
+
+**Interface location:** `src/main.ts:479-499`
+
+## Suggestion Filtering
+
+### Max Suggestions
+
+**What it controls:** Maximum number of tags to suggest at once.
+
+**Default:** `5`
+
+**Range:** 1-10 (slider)
+
+**Interface location:** `src/main.ts:501-513`
+
+<Note>
+When using the "Show all" modal (from the suggestion notice), up to double this number will be displayed (see `src/main.ts:265`).
+</Note>
+
+**How to choose:**
+- **1-3 tags**: Minimalist approach, only strongest matches
+- **5 tags**: Balanced (default recommendation)
+- **7-10 tags**: Exploratory, discover more tag relationships
+
+### Minimum Confidence
+
+**What it controls:** Threshold for cosine similarity score. Tags must score at least this value to be suggested.
+
+**Default:** `0.01`
+
+**Range:** 0.005 to 0.1 (increments of 0.005)
+
+**Interface location:** `src/main.ts:515-529`
+
+<Accordion title="Understanding confidence scores">
+The confidence score represents the cosine similarity between your note's content and the tag's characteristic word profile (after co-occurrence boosting).
+
+- **Lower threshold** (0.005-0.02): More suggestions, including weaker matches
+- **Higher threshold** (0.05-0.1): Fewer suggestions, only strong matches
+
+The "right" value depends on:
+- How consistently you tag notes
+- How specific vs. general your tags are
+- Vault size and tagging density
+</Accordion>
+
+**Recommended starting points:**
+- Small vault (under 100 notes): 0.02-0.03
+- Medium vault (100-500 notes): 0.01 (default)
+- Large vault (500+ notes): 0.005-0.01
+- Highly consistent tagging: 0.02-0.05
+
+## Vault Management
+
+### Rescan Vault
+
+**What it does:** Rebuilds the tag model by re-scanning all markdown files in your vault.
+
+**Interface location:** `src/main.ts:531-547`
+
+**When to use:**
+- After bulk-tagging many notes
+- After importing notes with tags
+- After restructuring your tag system
+- When suggestions seem stale or inaccurate
+
+<Warning>
+Rescanning will clear the suggestion cache. You may see repeated suggestions for currently open notes.
+</Warning>
+
+**What happens during rescan:**
+1. All existing model data is cleared
+2. Every markdown file is read and processed
+3. New TF-IDF vectors are computed
+4. Co-occurrence matrix is rebuilt
+5. Suggestion cache is cleared
+6. A notice displays the new statistics
+
+The process is the same as the initial scan at startup (batched, with UI thread yielding).
+
+## Commands
+
+Auto Tagger registers two commands in the command palette:
+
+### Suggest Tags for Current Note
+
+**Command ID:** `suggest-tags`
+
+**Interface location:** `src/main.ts:96-104`
+
+**Behavior:**
+- Clears the suggestion cache for the current file
+- Immediately shows all suggestions in a modal
+- Works even if "Auto-suggest while editing" is disabled
+
+### Rescan Vault for Tag Patterns
+
+**Command ID:** `rescan-vault`
+
+**Interface location:** `src/main.ts:106-118`
+
+**Behavior:**
+- Same as clicking "Rescan now" button in settings
+- Shows progress notice during scan
+- Displays completion notice with statistics
+
+## Advanced: Settings Interface
+
+Settings are stored in the `AutoTaggerSettings` interface (from `src/main.ts:16-22`):
+
+```typescript
+interface AutoTaggerSettings {
+  debounceMs: number;           // Check delay
+  tagLocation: "first-line" | "frontmatter" | "inline-end";
+  minScore: number;             // Minimum confidence
+  maxSuggestions: number;       // Max suggestions
+  autoSuggest: boolean;         // Auto-suggest while editing
+}
+```
+
+Default values are defined in `src/main.ts:24-30`:
+
+```typescript
+const DEFAULT_SETTINGS: AutoTaggerSettings = {
+  debounceMs: 2000,
+  tagLocation: "first-line",
+  minScore: 0.01,
+  maxSuggestions: 5,
+  autoSuggest: true,
+};
+```
+
+Settings are persisted to `.obsidian/plugins/auto-tagger/data.json` in your vault.

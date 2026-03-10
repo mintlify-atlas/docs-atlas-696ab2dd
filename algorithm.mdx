@@ -1,0 +1,437 @@
+---
+title: Algorithm Deep Dive
+description: Technical details of the TF-IDF-based tag suggestion algorithm
+---
+
+Auto Tagger uses a machine learning approach based on **TF-IDF** (Term Frequency-Inverse Document Frequency) and **cosine similarity** to suggest tags. This page explains the mathematical concepts and implementation details.
+
+## Overview
+
+The algorithm works in two phases:
+
+1. **Training Phase**: Scan your vault to build statistical profiles for each tag
+2. **Inference Phase**: Compare a note's content against tag profiles to suggest relevant tags
+
+## Training Phase: Building Tag Profiles
+
+### Vault Scanning
+
+When the plugin loads (or when you run "Rescan vault"), it processes all markdown files in batches:
+
+```typescript
+// From model.ts:56-81
+async scan(app: App, onProgress?: (pct: number) => void): Promise<ModelStats> {
+    this.clear();
+    const files = app.vault.getMarkdownFiles();
+    const BATCH = 100;
+
+    for (let i = 0; i < files.length; i += BATCH) {
+        const end = Math.min(i + BATCH, files.length);
+        for (let j = i; j < end; j++) {
+            const content = await app.vault.cachedRead(files[j]);
+            this.processFile(content);
+        }
+        onProgress?.(end / files.length);
+        // Yield to UI thread between batches
+        if (end < files.length) {
+            await new Promise<void>((r) => setTimeout(r, 0));
+        }
+    }
+
+    this.finalizeVectors();
+    this._ready = true;
+    return this.getStats();
+}
+```
+
+<Info>
+The plugin processes files in batches of 100 to prevent UI freezing during vault scans.
+</Info>
+
+### Text Tokenization
+
+Before analyzing content, the plugin extracts meaningful words:
+
+```typescript
+// From model.ts:197-217
+tokenize(content: string): string[] {
+    let body = content.replace(/^---\n[\s\S]*?\n---\n?/, ""); // frontmatter
+    body = body.replace(/```[\s\S]*?```/g, ""); // code blocks
+    body = body.replace(/`[^`]*`/g, ""); // inline code
+    body = body.replace(/!\[.*?\]\(.*?\)/g, ""); // images
+    body = body.replace(/\[([^\]]*)\]\(.*?\)/g, "$1"); // links
+    body = body.replace(/\[\[([^\]|]*?)(?:\|.*?)?\]\]/g, "$1"); // wiki links
+    body = body.replace(/#[a-zA-Z][a-zA-Z0-9_/\-]*/g, ""); // tags
+    body = body.replace(/#{1,6}\s/g, ""); // heading markers
+    body = body.replace(/[*_~`]+/g, ""); // emphasis
+
+    return body
+        .toLowerCase()
+        .split(/[^a-zäöüßàáâãèéêëìíîïòóôõùúûüñç0-9]+/)
+        .filter(
+            (w) =>
+                w.length >= 3 &&
+                !STOP_WORDS.has(w) &&
+                !/^\d+$/.test(w)
+        );
+}
+```
+
+The tokenizer:
+- Removes frontmatter, code blocks, links, images, and tags
+- Converts to lowercase
+- Filters out stop words (common words like "the", "and", etc.)
+- Keeps only words with 3+ characters
+- Excludes pure numbers
+- Supports English and German characters
+
+### Building Document Frequency
+
+For each unique word in each document, the plugin tracks how many documents contain that word:
+
+```typescript
+// From model.ts:239-245
+const uniqueWords = new Set(words);
+
+// Global document frequency (for IDF)
+for (const w of uniqueWords) {
+    this.globalDocFreq.set(
+        w,
+        (this.globalDocFreq.get(w) || 0) + 1
+    );
+}
+```
+
+<Accordion title="What is Document Frequency?">
+Document frequency (DF) is the number of documents containing a specific word. This is used to calculate IDF (Inverse Document Frequency), which gives lower weight to common words and higher weight to rare, distinctive words.
+
+For example:
+- "the" appears in 1000 documents → high DF → low IDF → low importance
+- "kubernetes" appears in 5 documents → low DF → high IDF → high importance
+</Accordion>
+
+### Building Tag Profiles
+
+For each tag, the plugin builds a profile containing:
+
+```typescript
+// From model.ts:6-13
+interface TagProfile {
+    documentCount: number;          // How many notes have this tag
+    wordCounts: Map<string, number>; // Word frequencies in tagged notes
+    totalWordCount: number;          // Total words across all tagged notes
+    vector: Map<string, number>;     // Precomputed TF-IDF vector
+    vectorNorm: number;              // Precomputed vector magnitude
+}
+```
+
+## TF-IDF Calculation
+
+### Term Frequency (TF)
+
+TF measures how often a word appears relative to total words:
+
+```typescript
+// From model.ts:294
+const tf = count / profile.totalWordCount;
+```
+
+**Formula**: `TF = (word count in tag's documents) / (total words in tag's documents)`
+
+### Inverse Document Frequency (IDF)
+
+IDF measures how rare or distinctive a word is:
+
+```typescript
+// From model.ts:296
+const idf = Math.log(1 + this.taggedDocuments / df);
+```
+
+**Formula**: `IDF = log(1 + total tagged documents / documents containing word)`
+
+<Info>
+The `+ 1` in the formula prevents division by zero and smooths the IDF values.
+</Info>
+
+### TF-IDF Weight
+
+The final weight combines both metrics:
+
+```typescript
+// From model.ts:297-298
+const weight = tf * idf;
+profile.vector.set(word, weight);
+```
+
+**Formula**: `TF-IDF = TF × IDF`
+
+### Vector Normalization
+
+To enable cosine similarity calculation, the plugin computes the magnitude (L2 norm) of each tag's vector:
+
+```typescript
+// From model.ts:299-301
+norm += weight * weight;
+profile.vectorNorm = Math.sqrt(norm);
+```
+
+**Formula**: `||v|| = √(w₁² + w₂² + ... + wₙ²)`
+
+## Inference Phase: Suggesting Tags
+
+### Document Vector Construction
+
+When suggesting tags for a note, the plugin first builds a TF-IDF vector for that note:
+
+```typescript
+// From model.ts:96-113
+const words = this.tokenize(content);
+const wordCounts = new Map<string, number>();
+for (const w of words) wordCounts.set(w, (wordCounts.get(w) || 0) + 1);
+
+const docVector = new Map<string, number>();
+let docNorm = 0;
+
+for (const [word, count] of wordCounts) {
+    const df = this.globalDocFreq.get(word);
+    if (!df) continue; // word not in corpus
+    const tf = count / words.length;
+    const idf = Math.log(1 + this.taggedDocuments / df);
+    const weight = tf * idf;
+    docVector.set(word, weight);
+    docNorm += weight * weight;
+}
+docNorm = Math.sqrt(docNorm);
+```
+
+### Cosine Similarity
+
+The plugin compares the note's vector against each tag's vector using cosine similarity:
+
+```typescript
+// From model.ts:122-129
+let dot = 0;
+for (const [word, docW] of docVector) {
+    const tagW = profile.vector.get(word);
+    if (tagW) dot += docW * tagW;
+}
+
+let score = dot / (docNorm * profile.vectorNorm);
+```
+
+**Formula**: `cosine_similarity = (A · B) / (||A|| × ||B||)`
+
+Where:
+- `A · B` = dot product of the two vectors
+- `||A||` = magnitude of vector A
+- `||B||` = magnitude of vector B
+
+<Accordion title="Why Cosine Similarity?">
+Cosine similarity measures the angle between two vectors, ranging from 0 (completely different) to 1 (identical direction). It's ideal for text comparison because:
+
+- It ignores document length (normalized by vector magnitudes)
+- It focuses on the *distribution* of words, not their absolute counts
+- It's computationally efficient
+
+Example:
+- Two documents about "machine learning" will have similar word distributions (high cosine similarity) even if one is 100 words and the other is 1000 words.
+</Accordion>
+
+## Co-occurrence Boost
+
+After calculating base similarity, the plugin applies a boost based on tag co-occurrence patterns:
+
+```typescript
+// From model.ts:131-142
+for (const existingTag of existingTags) {
+    const coMap = this.cooccurrence.get(existingTag);
+    if (!coMap) continue;
+    const coCount = coMap.get(tag);
+    if (!coCount) continue;
+    const existingProfile = this.tagProfiles.get(existingTag);
+    if (!existingProfile) continue;
+    const coRate = coCount / existingProfile.documentCount;
+    score *= 1 + coRate;
+}
+```
+
+**Formula**: `final_score = cosine_similarity × (1 + co-occurrence rate)`
+
+The co-occurrence rate is calculated as:
+
+`co-occurrence rate = (times tags appeared together) / (total documents with existing tag)`
+
+<Accordion title="Understanding Co-occurrence">
+If you have the tag `#python` in your note, and in your vault:
+- `#python` appears in 20 documents
+- `#python` and `#web-development` appear together in 8 documents
+
+Then for the candidate tag `#web-development`:
+- Co-occurrence rate = 8 / 20 = 0.4
+- Score boost = 1 + 0.4 = 1.4×
+
+This means if `#web-development` has a base similarity of 0.15, it becomes 0.15 × 1.4 = 0.21 after the boost.
+</Accordion>
+
+### Building the Co-occurrence Matrix
+
+During vault scanning, the plugin tracks which tags appear together:
+
+```typescript
+// From model.ts:271-285
+const tagArr = Array.from(tags);
+for (let i = 0; i < tagArr.length; i++) {
+    for (let j = 0; j < tagArr.length; j++) {
+        if (i === j) continue;
+        let map = this.cooccurrence.get(tagArr[i]);
+        if (!map) {
+            map = new Map();
+            this.cooccurrence.set(tagArr[i], map);
+        }
+        map.set(
+            tagArr[j],
+            (map.get(tagArr[j]) || 0) + 1
+        );
+    }
+}
+```
+
+## Filtering and Ranking
+
+Before returning suggestions, the plugin applies several filters:
+
+```typescript
+// From model.ts:118-120
+if (existingTags.has(tag)) continue;          // Skip tags already in note
+if (profile.documentCount < 2) continue;      // Need at least 2 examples
+if (profile.vectorNorm === 0) continue;       // Skip empty vectors
+```
+
+```typescript
+// From model.ts:144-150
+if (score >= minScore) {
+    results.push({ tag, score });
+}
+
+results.sort((a, b) => b.score - a.score);
+return results.slice(0, maxResults);
+```
+
+<Warning>
+Tags that appear in only 1 document are excluded from suggestions. This prevents overfitting to single examples and ensures the model has learned genuine patterns.
+</Warning>
+
+## Performance Optimizations
+
+### Precomputed Vectors
+
+Tag vectors are computed once during vault scanning and reused for all suggestions:
+
+```typescript
+// From model.ts:288-302
+private finalizeVectors() {
+    // Precompute TF-IDF vectors for each tag
+    for (const [, profile] of this.tagProfiles) {
+        profile.vector.clear();
+        let norm = 0;
+        for (const [word, count] of profile.wordCounts) {
+            const tf = count / profile.totalWordCount;
+            const df = this.globalDocFreq.get(word) || 1;
+            const idf = Math.log(1 + this.taggedDocuments / df);
+            const weight = tf * idf;
+            profile.vector.set(word, weight);
+            norm += weight * weight;
+        }
+        profile.vectorNorm = Math.sqrt(norm);
+    }
+}
+```
+
+This means:
+- O(n) time during vault scan
+- O(1) lookup during suggestion
+- No repeated TF-IDF calculations
+
+### Batch Processing
+
+Vault scanning yields to the UI thread every 100 files:
+
+```typescript
+// From model.ts:72-75
+if (end < files.length) {
+    await new Promise<void>((r) => setTimeout(r, 0));
+}
+```
+
+This prevents the UI from freezing during large vault scans.
+
+### Sparse Vector Representation
+
+Vectors are stored as `Map<string, number>` instead of dense arrays. This is efficient because:
+- Most words appear in only a few documents (sparse data)
+- Only non-zero weights are stored
+- Memory usage scales with unique words, not total vocabulary
+
+## Example Calculation
+
+Let's walk through a complete example:
+
+<Accordion title="Full worked example">
+**Vault stats:**
+- 100 tagged documents total
+- Tag `#javascript` appears in 15 documents
+- Tag `#react` appears in 8 documents
+- They appear together in 6 documents
+
+**Word frequencies for #javascript:**
+- "function" appears 45 times across 300 total words
+- "function" appears in 40 documents globally
+
+**TF-IDF for "function" in #javascript:**
+1. TF = 45 / 300 = 0.15
+2. IDF = log(1 + 100 / 40) = log(3.5) ≈ 1.25
+3. TF-IDF = 0.15 × 1.25 = 0.1875
+
+**Current note:**
+- Contains "function" 3 times in 50 words
+- Already has tag `#react`
+
+**Note's TF-IDF for "function":**
+1. TF = 3 / 50 = 0.06
+2. IDF = log(1 + 100 / 40) ≈ 1.25
+3. TF-IDF = 0.06 × 1.25 = 0.075
+
+**Cosine similarity:**
+- Dot product (simplified, just "function"): 0.1875 × 0.075 = 0.0141
+- Assume vector norms are 1.0 (normalized)
+- Base score: 0.0141
+
+**Co-occurrence boost:**
+- `#react` and `#javascript` appear together in 6 of 8 `#react` documents
+- Co-occurrence rate: 6 / 8 = 0.75
+- Boost: 1 + 0.75 = 1.75
+- Final score: 0.0141 × 1.75 ≈ 0.0247
+
+If `minScore = 0.01`, then `#javascript` would be suggested!
+</Accordion>
+
+## Model Statistics
+
+You can check the model's current state in the plugin settings:
+
+```typescript
+// From model.ts:41-47
+getStats(): ModelStats {
+    return {
+        totalDocuments: this.totalDocuments,
+        taggedDocuments: this.taggedDocuments,
+        uniqueTags: this.tagProfiles.size,
+        uniqueWords: this.globalDocFreq.size,
+    };
+}
+```
+
+These stats help you understand:
+- How much training data the model has
+- Whether you need to rescan after adding new notes
+- The vocabulary size the model learned from

@@ -1,0 +1,381 @@
+---
+title: API Reference
+description: Complete API reference for developers extending Auto Tagger
+---
+
+## Overview
+
+Auto Tagger provides a public API for extending and integrating with the plugin. This reference documents all public classes, interfaces, and methods.
+
+## Plugin Class
+
+### AutoTaggerPlugin
+
+Main plugin class that extends Obsidian's `Plugin` base class.
+
+**Location**: `src/main.ts:34`
+
+<ParamField path="settings" type="AutoTaggerSettings">
+  Current plugin settings
+</ParamField>
+
+<ParamField path="model" type="TagModel">
+  The TF-IDF model instance used for tag suggestions
+</ParamField>
+
+#### Methods
+
+<ResponseField name="onload()" type="Promise<void>">
+  Called when the plugin is loaded. Initializes the model, settings tab, and registers event handlers.
+  
+  **Lifecycle**:
+  1. Loads settings from disk
+  2. Creates TagModel instance
+  3. Registers settings tab
+  4. Scans vault when layout is ready
+  5. Registers editor-change event
+  6. Registers active-leaf-change event
+  7. Adds commands
+</ResponseField>
+
+<ResponseField name="onunload()" type="void">
+  Called when the plugin is unloaded. Cleans up timers and active notices.
+</ResponseField>
+
+<ResponseField name="loadSettings()" type="Promise<void>">
+  Loads settings from disk and merges with defaults.
+</ResponseField>
+
+<ResponseField name="saveSettings()" type="Promise<void>">
+  Saves current settings to disk.
+</ResponseField>
+
+<ResponseField name="clearCache()" type="void">
+  Clears the cache of suggestions shown per file. Useful after rescanning or when tags have been manually changed.
+</ResponseField>
+
+## Interfaces
+
+### AutoTaggerSettings
+
+Plugin configuration interface.
+
+**Location**: `src/main.ts:16`
+
+<ParamField path="debounceMs" type="number" default="2000">
+  Debounce delay in milliseconds before checking for tag suggestions after typing
+</ParamField>
+
+<ParamField path="tagLocation" type="'first-line' | 'frontmatter' | 'inline-end'" default="'first-line'">
+  Where to insert accepted tags:
+  - `first-line`: Insert as inline tags on the first content line
+  - `frontmatter`: Insert in YAML frontmatter tags array
+  - `inline-end`: Insert at the end of the current line
+</ParamField>
+
+<ParamField path="minScore" type="number" default="0.01">
+  Minimum confidence score for showing suggestions (range: 0.005 - 0.1)
+</ParamField>
+
+<ParamField path="maxSuggestions" type="number" default="5">
+  Maximum number of tags to suggest at once (range: 1 - 10)
+</ParamField>
+
+<ParamField path="autoSuggest" type="boolean" default="true">
+  Whether to automatically suggest tags while editing
+</ParamField>
+
+### TagSuggestion
+
+Represents a single tag suggestion with its confidence score.
+
+**Location**: `src/model.ts:15`
+
+<ParamField path="tag" type="string">
+  The suggested tag name (without the # prefix)
+</ParamField>
+
+<ParamField path="score" type="number">
+  Confidence score based on TF-IDF cosine similarity and co-occurrence boost
+</ParamField>
+
+### ModelStats
+
+Statistics about the learned tag model.
+
+**Location**: `src/model.ts:20`
+
+<ParamField path="totalDocuments" type="number">
+  Total number of markdown files scanned in the vault
+</ParamField>
+
+<ParamField path="taggedDocuments" type="number">
+  Number of documents that contain at least one tag
+</ParamField>
+
+<ParamField path="uniqueTags" type="number">
+  Number of unique tags found across all documents
+</ParamField>
+
+<ParamField path="uniqueWords" type="number">
+  Number of unique words in the model's vocabulary
+</ParamField>
+
+## TagModel Class
+
+The TF-IDF engine that learns from existing tags and suggests new ones.
+
+**Location**: `src/model.ts:29`
+
+### Properties
+
+<ResponseField name="isReady" type="boolean">
+  Read-only property indicating whether the model has completed scanning and is ready to provide suggestions.
+</ResponseField>
+
+### Methods
+
+<ResponseField name="scan(app, onProgress?)" type="Promise<ModelStats>">
+  Scans all markdown files in the vault and builds the TF-IDF model.
+  
+  **Parameters**:
+  - `app: App` - Obsidian app instance
+  - `onProgress?: (pct: number) => void` - Optional callback for progress updates (0.0 to 1.0)
+  
+  **Returns**: Promise resolving to `ModelStats`
+  
+  **Process**:
+  1. Clears existing model data
+  2. Processes files in batches of 100
+  3. Extracts tags and tokenizes content
+  4. Builds word frequency maps and co-occurrence matrix
+  5. Finalizes TF-IDF vectors
+  6. Sets `isReady` to true
+</ResponseField>
+
+<ResponseField name="suggest(content, existingTags, maxResults?, minScore?)" type="TagSuggestion[]">
+  Generates tag suggestions for the given content.
+  
+  **Parameters**:
+  - `content: string` - The document content to analyze
+  - `existingTags: Set<string>` - Tags already present in the document (will be excluded from suggestions)
+  - `maxResults: number = 5` - Maximum number of suggestions to return
+  - `minScore: number = 0.01` - Minimum confidence score threshold
+  
+  **Returns**: Array of `TagSuggestion` sorted by score (descending)
+  
+  **Algorithm**:
+  1. Tokenizes content and computes TF-IDF vector
+  2. Calculates cosine similarity with each tag's vector
+  3. Applies co-occurrence boost based on existing tags
+  4. Filters by minimum score and document count (≥2)
+  5. Sorts and returns top results
+</ResponseField>
+
+<ResponseField name="extractTags(content)" type="Set<string>">
+  Extracts all tags from document content.
+  
+  **Parameters**:
+  - `content: string` - The document content
+  
+  **Returns**: Set of tag names (without # prefix)
+  
+  **Supports**:
+  - Inline tags: `#tag-name`, `#nested/tag`
+  - Frontmatter array: `tags: [a, b, c]`
+  - Frontmatter list:
+    ```yaml
+    tags:
+      - a
+      - b
+    ```
+</ResponseField>
+
+<ResponseField name="tokenize(content)" type="string[]">
+  Tokenizes document content into words for analysis.
+  
+  **Parameters**:
+  - `content: string` - The document content
+  
+  **Returns**: Array of lowercase words (3+ characters, no stop words, no numbers)
+  
+  **Processing**:
+  1. Removes frontmatter, code blocks, inline code
+  2. Removes images and links (keeps link text)
+  3. Removes wiki links (keeps link text)
+  4. Removes tags and heading markers
+  5. Splits on non-alphanumeric boundaries
+  6. Filters stop words and short words
+  
+  **Supports**: English and German characters (ä, ö, ü, ß, etc.)
+</ResponseField>
+
+<ResponseField name="getStats()" type="ModelStats">
+  Returns current model statistics.
+</ResponseField>
+
+<ResponseField name="getKnownTags()" type="string[]">
+  Returns a sorted array of all tags known to the model.
+</ResponseField>
+
+## Commands
+
+The plugin registers two commands accessible from the command palette:
+
+### suggest-tags
+
+**Name**: "Suggest tags for current note"
+
+**Function**: Manually triggers tag suggestions for the active note, showing all suggestions in a modal dialog.
+
+**Editor callback**: Available when a markdown editor is active
+
+### rescan-vault
+
+**Name**: "Rescan vault for tag patterns"
+
+**Function**: Re-scans all notes in the vault to update the tag model. Shows progress notice during scanning.
+
+**Callback**: Available anytime
+
+## Events
+
+The plugin listens to the following Obsidian workspace events:
+
+### editor-change
+
+**Trigger**: Fired when the editor content changes
+
+**Handler**: Schedules a debounced tag check if auto-suggest is enabled
+
+### active-leaf-change
+
+**Trigger**: Fired when switching between notes
+
+**Handler**:
+1. Clears pending suggestions
+2. Hides active notice
+3. Runs tag check on newly opened note after 500ms delay
+
+## Usage Examples
+
+### Accessing the Plugin Instance
+
+```typescript
+// From another plugin
+const autoTagger = this.app.plugins.plugins['auto-tagger'];
+if (autoTagger) {
+  const stats = autoTagger.model.getStats();
+  console.log(`Learned ${stats.uniqueTags} tags`);
+}
+```
+
+### Manual Tag Suggestions
+
+```typescript
+const plugin = this.app.plugins.plugins['auto-tagger'];
+const content = "Your note content here";
+const existingTags = new Set(['existing-tag']);
+
+const suggestions = plugin.model.suggest(
+  content,
+  existingTags,
+  5,    // max results
+  0.01  // min score
+);
+
+suggestions.forEach(s => {
+  console.log(`#${s.tag}: ${s.score.toFixed(3)}`);
+});
+```
+
+### Extracting Tags
+
+```typescript
+const plugin = this.app.plugins.plugins['auto-tagger'];
+const content = await this.app.vault.read(file);
+const tags = plugin.model.extractTags(content);
+
+console.log('Tags in document:', Array.from(tags));
+```
+
+### Triggering a Rescan
+
+```typescript
+const plugin = this.app.plugins.plugins['auto-tagger'];
+const stats = await plugin.model.scan(this.app);
+console.log(`Scanned ${stats.totalDocuments} documents`);
+```
+
+## TF-IDF Algorithm Details
+
+For developers interested in the underlying algorithm:
+
+### Term Frequency (TF)
+
+```
+TF(word, tag) = count(word in tag docs) / total words in tag docs
+```
+
+### Inverse Document Frequency (IDF)
+
+```
+IDF(word) = log(1 + taggedDocuments / documents containing word)
+```
+
+### TF-IDF Weight
+
+```
+weight(word, tag) = TF(word, tag) × IDF(word)
+```
+
+### Cosine Similarity
+
+```
+score = dot(doc_vector, tag_vector) / (||doc_vector|| × ||tag_vector||)
+```
+
+### Co-occurrence Boost
+
+For each existing tag in the document:
+
+```
+coRate = times_appeared_together / existing_tag_document_count
+score *= (1 + coRate)
+```
+
+## Performance Considerations
+
+<ResponseField name="Scanning" type="optimization">
+  - Files are processed in batches of 100
+  - Yields to UI thread between batches
+  - Uses `cachedRead()` for better performance
+</ResponseField>
+
+<ResponseField name="Real-time suggestions" type="optimization">
+  - Debounced by default (2000ms)
+  - Only processes when editor content changes
+  - Tag vectors are precomputed during scan
+</ResponseField>
+
+<ResponseField name="Memory" type="consideration">
+  - Full vocabulary is kept in memory
+  - Tag profiles include word frequency maps
+  - Co-occurrence matrix is sparse but grows with O(tags²)
+</ResponseField>
+
+## Type Definitions
+
+For TypeScript developers, here are the internal type definitions:
+
+```typescript
+interface TagProfile {
+  documentCount: number;
+  wordCounts: Map<string, number>;
+  totalWordCount: number;
+  vector: Map<string, number>;      // Precomputed TF-IDF
+  vectorNorm: number;                // Precomputed L2 norm
+}
+```
+
+The `TagProfile` is internal to `TagModel` and not exposed in the public API.

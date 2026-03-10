@@ -1,0 +1,417 @@
+---
+title: Usage Tips
+description: Best practices for getting accurate tag suggestions
+---
+
+Auto Tagger learns from your existing tagging patterns. The better your input data, the better the suggestions. Here are proven strategies for getting the most out of the plugin.
+
+## Building a Strong Foundation
+
+### Start with Manual Tagging
+
+The plugin needs examples to learn from. Before expecting good suggestions:
+
+<Steps>
+  <Step title="Tag your existing notes">
+    Go through your vault and add tags to at least 20-30 notes manually. Focus on notes you consider well-organized or representative of your content.
+  </Step>
+  
+  <Step title="Use each tag multiple times">
+    Remember: tags must appear in at least 2 documents to be suggested (see `src/model.ts:119`). Aim for 3-5 examples minimum for reliable suggestions.
+  </Step>
+  
+  <Step title="Rescan after bulk tagging">
+    Use the "Rescan vault" command (or button in settings) after tagging multiple notes so the model learns from your new patterns.
+  </Step>
+</Steps>
+
+<Info>
+The plugin only learns from notes that already have tags. Untagged notes are counted in statistics but don't influence the model.
+</Info>
+
+### Be Consistent
+
+Consistency is more important than quantity.
+
+<Tabs>
+  <Tab title="✅ Good Practice">
+    **Pick one tag format and stick with it:**
+    ```markdown
+    #machine-learning  ✅ (always use hyphens)
+    #data-science      ✅
+    #python            ✅
+    ```
+
+    **Use tags for similar content:**
+    - Tag all Python tutorials with `#python`
+    - Tag all project planning notes with `#planning`
+    - Tag all meeting notes with `#meeting`
+  </Tab>
+  
+  <Tab title="❌ Bad Practice">
+    **Mixing formats:**
+    ```markdown
+    #machine-learning  ❌
+    #MachineLearning   ❌ (treated as different tag)
+    #machine_learning  ❌
+    #ML                ❌ (abbreviation)
+    ```
+
+    **Random or inconsistent tagging:**
+    - Some Python notes tagged `#python`, others `#programming`
+    - Tagging some meeting notes but not others
+    - Using very specific tags only once
+  </Tab>
+</Tabs>
+
+<Warning>
+Tag names are case-sensitive and format-sensitive. `#Python` and `#python` are different tags to the plugin.
+</Warning>
+
+## Optimizing Tag Quality
+
+### Tag Granularity
+
+Balance between too broad and too specific:
+
+**Too broad:**
+- `#notes` (applies to everything)
+- `#stuff`
+- `#important`
+
+**Too specific:**
+- `#python-pandas-dataframe-merge-tutorial-2024`
+- `#meeting-with-john-about-project-x`
+
+**Just right:**
+- `#python` + `#pandas`
+- `#meeting` + `#project-x`
+
+<Note>
+The TF-IDF algorithm automatically weights distinctive words higher (see `src/model.ts:294-301`). Broad tags that appear in many different contexts will naturally have lower, more diffuse vectors.
+</Note>
+
+### Use Tag Hierarchies
+
+Obsidian supports nested tags with forward slashes. The plugin treats these as single tags:
+
+```markdown
+#programming/python
+#programming/javascript
+#work/projects/alpha
+```
+
+**Benefits:**
+- Organize related tags hierarchically
+- The plugin learns associations at each level
+- You can use Obsidian's tag pane to collapse/expand categories
+
+**Co-occurrence boost example:**
+
+If you consistently use `#programming/python` together with `#data/science`, the plugin will learn this pattern and boost `#data/science` when it sees `#programming/python` in a note (from `src/model.ts:133-142`).
+
+### Content Quality Matters
+
+The plugin analyzes note content, not just titles:
+
+<Accordion title="What makes good training content?">
+  **Strong signals:**
+  - Descriptive body text (at least 50-100 words)
+  - Technical terms and domain-specific vocabulary
+  - Consistent terminology across similar notes
+
+  **Weak signals:**
+  - Very short notes (< 20 words)
+  - Notes with mostly links and no prose
+  - Notes that are just lists of tasks
+  - Generic placeholder text
+</Accordion>
+
+Remember: The tokenizer filters out:
+- Stop words ("the", "and", "is", etc.)
+- Words shorter than 3 characters
+- Pure numbers
+- Code blocks and inline code
+- Frontmatter (except tags)
+
+See `src/model.ts:197-217` for full tokenization logic.
+
+## Working with Suggestions
+
+### Understanding the Suggestion Notice
+
+When a suggestion appears, you have several options (from `src/main.ts:183-255`):
+
+<Steps>
+  <Step title="Add">
+    Accept the suggestion. The tag is inserted according to your "Tag placement" setting, and the next suggestion appears.
+  </Step>
+  
+  <Step title="Skip">
+    Reject this suggestion but continue to the next one. The plugin won't suggest this tag again for the current note (even after edits).
+  </Step>
+  
+  <Step title="Skip all">
+    Dismiss all pending suggestions for this note. Only appears when there are multiple suggestions.
+  </Step>
+  
+  <Step title="Show all">
+    Open a modal with all suggestions (up to 2× your "Max suggestions" setting). You can select multiple tags to add at once. Top 3 are pre-selected.
+  </Step>
+</Steps>
+
+<Info>
+Skipped suggestions are tracked per file. If you close and reopen the note, you'll see suggestions again (from `src/main.ts:38`).
+</Info>
+
+### When to Manually Trigger Suggestions
+
+Use the command palette command "Suggest tags for current note" when:
+
+- You've just written a lot of content and want to review all suggestions
+- You have "Auto-suggest while editing" disabled
+- You want to re-evaluate tags after skipping some
+- You want to see the full modal view immediately
+
+This command bypasses the debounce delay and clears the skip cache (from `src/main.ts:96-104`).
+
+## Tuning for Your Vault
+
+### Small Vaults (under 100 notes)
+
+**Challenges:**
+- Limited training data
+- Fewer tag examples
+- More variance in suggestions
+
+**Recommended settings:**
+```
+Check delay: 1500-2000ms
+Max suggestions: 3
+Minimum confidence: 0.02-0.03
+```
+
+**Tips:**
+- Be extra consistent with tagging
+- Use fewer, more general tags
+- Manually tag at least 30-40 notes
+- Accept that suggestions will improve over time
+
+### Medium Vaults (100-500 notes)
+
+**Optimal conditions for the plugin:**
+- Enough data to learn patterns
+- Not too large to slow down processing
+
+**Recommended settings:**
+```
+Check delay: 2000ms (default)
+Max suggestions: 5 (default)
+Minimum confidence: 0.01 (default)
+```
+
+**Tips:**
+- Experiment with co-occurrence by using related tags together
+- Develop a tag hierarchy for your main topics
+- Rescan after adding 20+ tagged notes
+
+### Large Vaults (500+ notes)
+
+**Considerations:**
+- Initial scan takes longer (but only happens once)
+- More unique words and tags in the model
+- Very robust suggestions if tagging is consistent
+
+**Recommended settings:**
+```
+Check delay: 2500-3000ms
+Max suggestions: 5-7
+Minimum confidence: 0.005-0.01
+```
+
+**Tips:**
+- Consider disabling auto-suggest if you notice slowdowns
+- Use manual trigger instead for better control
+- Be patient during initial scan (may take 30-60 seconds)
+- Higher confidence thresholds can reduce noise
+
+### Specialized Vaults
+
+<Tabs>
+  <Tab title="Academic Research">
+    **Characteristics:**
+    - Technical terminology
+    - Citation-heavy notes
+    - Topic clusters
+
+    **Tips:**
+    - Tag by methodology (`#qualitative`, `#quantitative`)
+    - Tag by field/subfield
+    - Use co-occurrence for paper-topic relationships
+    - The plugin excels with technical jargon
+  </Tab>
+  
+  <Tab title="Project Management">
+    **Characteristics:**
+    - Action items and tasks
+    - Meeting notes
+    - Status updates
+
+    **Tips:**
+    - Tag by project name
+    - Tag by meeting type
+    - Use frontmatter for metadata tags
+    - Inline for contextual tags
+    - Shorter notes = weaker signals
+  </Tab>
+  
+  <Tab title="Personal Knowledge">
+    **Characteristics:**
+    - Diverse topics
+    - Mix of long and short notes
+    - Evolving structure
+
+    **Tips:**
+    - Start with broad categories
+    - Add specific tags as patterns emerge
+    - Use "Show all" modal to discover connections
+    - Rescan frequently as your system evolves
+  </Tab>
+  
+  <Tab title="Multi-language">
+    **Characteristics:**
+    - Notes in different languages
+    - Mixed terminology
+
+    **Current support:**
+    - English and German stop words (see `src/stopwords.ts:1`)
+    - Unicode tokenization (supports accented characters)
+
+    **Tips:**
+    - Separate tags by language if possible
+    - The plugin works best within a single language
+    - Consider language-specific vaults for best results
+  </Tab>
+</Tabs>
+
+## Troubleshooting Poor Suggestions
+
+### No Suggestions Appearing
+
+<Steps>
+  <Step title="Check if model is ready">
+    Look at the settings page. Do you see model statistics? If not, wait for the initial scan to complete or trigger a manual rescan.
+  </Step>
+  
+  <Step title="Verify minimum requirements">
+    - Is your note longer than 3 words after tokenization?
+    - Do you have at least 2 documents with some tags?
+    - Are you below the minimum confidence threshold?
+  </Step>
+  
+  <Step title="Check auto-suggest setting">
+    Is "Auto-suggest while editing" enabled? If not, use the command palette to manually trigger.
+  </Step>
+  
+  <Step title="Review existing tags">
+    The plugin won't suggest tags already in the note. Check your frontmatter and inline tags.
+  </Step>
+</Steps>
+
+### Suggestions Are Not Relevant
+
+**Possible causes and fixes:**
+
+<Accordion title="Inconsistent training data">
+  **Symptom:** Random or unexpected suggestions
+  
+  **Solution:** Review how you've tagged similar notes. Are you using the same tags for the same topics? Standardize your tagging and rescan.
+</Accordion>
+
+<Accordion title="Minimum confidence too low">
+  **Symptom:** Many weak, barely-related suggestions
+  
+  **Solution:** Increase "Minimum confidence" to 0.02-0.05 in settings. This filters out low-quality matches.
+</Accordion>
+
+<Accordion title="Note content too generic">
+  **Symptom:** Suggestions don't match the specific topic
+  
+  **Solution:** Add more distinctive, topic-specific words to your note. Generic language produces generic suggestions.
+</Accordion>
+
+<Accordion title="Stale model">
+  **Symptom:** Old tags suggested even though you've changed your system
+  
+  **Solution:** Click "Rescan vault" in settings to rebuild the model with current data.
+</Accordion>
+
+### Performance Issues
+
+<Warning>
+If you experience lag or freezing, try these steps:
+</Warning>
+
+1. **Increase check delay** to 3000-5000ms
+2. **Disable auto-suggest** and use manual triggering instead
+3. **Reduce max suggestions** to 3
+4. **Check vault size** - initial scan of 1000+ notes may take time
+
+The plugin processes files in batches and yields to the UI (from `src/model.ts:63-76`), but very large vaults may still experience brief pauses.
+
+## Advanced Patterns
+
+### Using Multiple Tag Strategies
+
+Combine different tag types:
+
+```markdown
+---
+tags:
+  - type/article
+  - status/published
+---
+
+#python #machine-learning #tutorial
+
+Content here...
+
+Section about pandas specifically. #pandas
+```
+
+- **Frontmatter**: Metadata and status tags
+- **First line**: Primary topic tags
+- **Inline**: Contextual, paragraph-specific tags
+
+You can change "Tag placement" in settings based on what you're adding.
+
+### Leveraging Co-occurrence
+
+Explicitly train tag relationships:
+
+1. Identify tags that should appear together (e.g., `#project-x` + `#planning`)
+2. Manually add both tags to several related notes
+3. Rescan vault
+4. The plugin will automatically boost `#planning` when it sees `#project-x`
+
+The boost is proportional to how often they co-occur (from `src/model.ts:140-141`).
+
+### Periodic Maintenance
+
+Set a reminder to:
+
+1. **Monthly:** Review and standardize tags using Obsidian's tag pane
+2. **After bulk imports:** Always rescan
+3. **Quarterly:** Audit tag consistency across your most important notes
+4. **When suggestions degrade:** Rescan and check for tag drift
+
+## Getting Help
+
+If suggestions still aren't working well after following these tips:
+
+1. Check the console (Ctrl+Shift+I / Cmd+Opt+I) for error messages
+2. Verify your vault has at least 2 tagged documents with each tag
+3. Try the "Suggest tags for current note" command on a well-tagged note to verify the model is working
+4. Consider starting with default settings and adjusting one at a time
+
+Remember: The plugin is only as good as your training data. Garbage in, garbage out. Consistent, meaningful tagging produces excellent suggestions.
