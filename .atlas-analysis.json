@@ -1,0 +1,60 @@
+{
+  "projectType": "frontend",
+  "projectName": "Auto Tagger",
+  "projectDescription": "Obsidian plugin that suggests tags based on vault-wide TF-IDF patterns",
+  "theme": "palm",
+  "primaryColor": "#7C3AED",
+  "lightColor": "#A78BFA",
+  "darkColor": "#5B21B6",
+  "navigation": {
+    "groups": [
+      {
+        "group": "Get Started",
+        "pages": [
+          "introduction",
+          "installation",
+          "quickstart"
+        ]
+      },
+      {
+        "group": "User Guide",
+        "pages": [
+          "how-it-works",
+          "settings",
+          "usage-tips"
+        ]
+      },
+      {
+        "group": "Advanced",
+        "pages": [
+          "algorithm",
+          "configuration",
+          "troubleshooting"
+        ]
+      },
+      {
+        "group": "Development",
+        "pages": [
+          "contributing",
+          "api-reference"
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "TF-IDF based tag suggestions",
+    "Real-time suggestions as you type",
+    "Tag co-occurrence boosting",
+    "Multiple tag placement options",
+    "Configurable confidence thresholds",
+    "Vault scanning and rescanning"
+  ],
+  "publicApiSurface": [
+    "AutoTaggerPlugin",
+    "TagModel.scan()",
+    "TagModel.suggest()",
+    "TagModel.extractTags()",
+    "TagModel.tokenize()",
+    "AutoTaggerSettings"
+  ]
+}
